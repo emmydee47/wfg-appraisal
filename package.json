@@ -1,0 +1,11 @@
+{
+    "name": "wfg-appraisal",
+    "version": "18.2.1",
+    "description": "wfg appraisal",
+    "license": "SEE LICENSE IN LICENSE.md",
+    "private": true,
+    "dependencies": {},
+    "engines": {
+        "node": ">=16"
+    }
+}
