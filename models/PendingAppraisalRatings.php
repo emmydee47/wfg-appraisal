@@ -58,7 +58,7 @@ class PendingAppraisalRatings extends DbTable
         // Update Table
         $this->UpdateTable = "`pending_appraisal_ratings`";
         $this->Dbid = 'DB';
-        $this->ExportAll = true;
+        $this->ExportAll = false;
         $this->ExportPageBreakCount = 0; // Page break per every n record (PDF only)
         $this->ExportPageOrientation = "portrait"; // Page orientation (PDF only)
         $this->ExportPageSize = "a4"; // Page size (PDF only)
