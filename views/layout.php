@@ -16,6 +16,7 @@ $basePath = BasePath(true);
 <link rel="stylesheet" href="/<?= $basePath ?><?= CssFile(Config("PDF_STYLESHEET_FILENAME")) ?>"><!-- Absolute path with leading '/' -->
     <?php } ?>
 <?php } ?>
+<?php if (!IsExport() || IsExport("print")) { ?>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="<?= $basePath ?>css/select2.min.css">
 <link rel="stylesheet" href="<?= $basePath ?>css/select2-bootstrap5.min.css">
@@ -209,10 +210,12 @@ ew.ready("head", [ew.PATH_BASE + "ckeditor/ckeditor.js", ew.PATH_BASE + "js/ewed
     {{/if}}
 {{/if}}
 </script>
+<?php } ?>
 <meta name="generator" content="PHPMaker 2022.2.1">
 </head>
 <body class="<?= Config("BODY_CLASS") ?>">
 <?php if (@!$SkipHeaderFooter) { ?>
+<?php if (!IsExport()) { ?>
 <div class="wrapper ew-layout">
     <!-- Main Header -->
     <!-- Navbar -->
@@ -237,7 +240,7 @@ ew.ready("head", [ew.PATH_BASE + "ckeditor/ckeditor.js", ew.PATH_BASE + "js/ewed
         <div class="brand-container">
             <!-- Brand Logo //** Note: Only licensed users are allowed to change the logo ** -->
             <a href="#" class="brand-link">
-                <span class="brand-text">PHPMaker 2022</span>
+                <span class="brand-text"><img src="https://workforcegroup.com/wp-content/uploads/2021/04/original_Workforce-Logo-Large-1.svg" /></span>
             </a>
             <?php if (preg_match('/\bsidebar-mini\b/', Config("BODY_CLASS"))) { ?>
             <a class="pushmenu mx-1" data-pushmenu="mini" role="button"><i class="fas fa-angle-double-left"></i></a>
@@ -283,7 +286,9 @@ ew.ready("head", [ew.PATH_BASE + "ckeditor/ckeditor.js", ew.PATH_BASE + "js/ewed
         <section class="content">
         <div class="container-fluid">
 <?php } ?>
+<?php } ?>
 <?= $content ?>
+<?php if (!IsExport()) { ?>
 <?php if (@!$SkipHeaderFooter) { ?>
 <?php
 if (isset($DebugTimer)) {
@@ -298,7 +303,7 @@ if (isset($DebugTimer)) {
     <!-- Main Footer -->
     <footer class="main-footer">
         <!-- ** Note: Only licensed users are allowed to change the copyright statement. ** -->
-        <div class="ew-footer-text"><?= $Language->projectPhrase("FooterText") ?></div>
+        <div class="ew-footer-text"></div>
         <div class="float-end d-none d-sm-inline"></div>
     </footer>
 </div>
@@ -401,9 +406,12 @@ loadjs.done("wrapper");
 <div id="ew-tooltip"></div>
 <!-- drill down -->
 <div id="ew-drilldown-panel"></div>
+<?php } ?>
+<?php if (IsExport("print")) { ?>
 <script>
 loadjs.done("wrapper");
 </script>
+<?php } ?>
 <script>
 loadjs.ready(ew.bundleIds, function() {
     if (!loadjs.isDefined("foot"))
