@@ -59,7 +59,49 @@ loadjs.ready(["wrapper", "head"], function () {
     fmain_pa_questionssrch = new ew.Form("fmain_pa_questionssrch", "list");
     currentSearchForm = fmain_pa_questionssrch;
 
+    // Add fields
+    var fields = currentTable.fields;
+    fmain_pa_questionssrch.addFields([
+        ["id", [], fields.id.isInvalid],
+        ["group", [], fields.group.isInvalid],
+        ["question", [], fields.question.isInvalid],
+        ["description", [], fields.description.isInvalid],
+        ["created_date", [], fields.created_date.isInvalid],
+        ["modified_date", [], fields.modified_date.isInvalid]
+    ]);
+
+    // Validate form
+    fmain_pa_questionssrch.validate = function () {
+        if (!this.validateRequired)
+            return true; // Ignore validation
+        var fobj = this.getForm(),
+            $fobj = $(fobj),
+            rowIndex = "";
+        $fobj.data("rowindex", rowIndex);
+
+        // Validate fields
+        if (!this.validateFields(rowIndex))
+            return false;
+
+        // Call Form_CustomValidate event
+        if (!this.customValidate(fobj)) {
+            this.focus();
+            return false;
+        }
+        return true;
+    }
+
+    // Form_CustomValidate
+    fmain_pa_questionssrch.customValidate = function(fobj) { // DO NOT CHANGE THIS LINE!
+        // Your custom validation code here, return false if invalid.
+        return true;
+    }
+
+    // Use JavaScript validation or not
+    fmain_pa_questionssrch.validateRequired = ew.CLIENT_VALIDATE;
+
     // Dynamic selection lists
+    fmain_pa_questionssrch.lists.group = <?= $Page->group->toClientList($Page) ?>;
 
     // Filters
     fmain_pa_questionssrch.filterList = <?= $Page->getFilterList() ?>;
@@ -98,6 +140,106 @@ $Page->renderOtherOptions();
 <input type="hidden" name="cmd" value="search">
 <input type="hidden" name="t" value="main_pa_questions">
 <div class="ew-extended-search container-fluid">
+<div class="row mb-0<?= ($Page->SearchFieldsPerRow > 0) ? " row-cols-sm-" . $Page->SearchFieldsPerRow : "" ?>">
+<?php
+// Render search row
+$Page->RowType = ROWTYPE_SEARCH;
+$Page->resetAttributes();
+$Page->renderRow();
+?>
+<?php if ($Page->group->Visible) { // group ?>
+<?php
+if (!$Page->group->UseFilter) {
+    $Page->SearchColumnCount++;
+}
+?>
+    <div id="xs_group" class="col-sm-auto d-sm-flex mb-3 px-0 pe-sm-2<?= $Page->group->UseFilter ? " ew-filter-field" : "" ?>">
+        <div class="d-flex my-1 my-sm-0">
+            <label for="x_group" class="ew-search-caption ew-label"><?= $Page->group->caption() ?></label>
+            <div class="ew-search-operator">
+<?= $Language->phrase("=") ?>
+<input type="hidden" name="z_group" id="z_group" value="=">
+</div>
+        </div>
+        <div id="el_main_pa_questions_group" class="ew-search-field">
+    <select
+        id="x_group"
+        name="x_group"
+        class="form-control ew-select<?= $Page->group->isInvalidClass() ?>"
+        data-select2-id="fmain_pa_questionssrch_x_group"
+        data-table="main_pa_questions"
+        data-field="x_group"
+        data-caption="<?= HtmlEncode(RemoveHtml($Page->group->caption())) ?>"
+        data-modal-lookup="true"
+        data-value-separator="<?= $Page->group->displayValueSeparatorAttribute() ?>"
+        data-placeholder="<?= HtmlEncode($Page->group->getPlaceHolder()) ?>"
+        <?= $Page->group->editAttributes() ?>>
+        <?= $Page->group->selectOptionListHtml("x_group") ?>
+    </select>
+    <div class="invalid-feedback"><?= $Page->group->getErrorMessage(false) ?></div>
+<?= $Page->group->Lookup->getParamTag($Page, "p_x_group") ?>
+<script>
+loadjs.ready("fmain_pa_questionssrch", function() {
+    var options = { name: "x_group", selectId: "fmain_pa_questionssrch_x_group" };
+    if (fmain_pa_questionssrch.lists.group.lookupOptions.length) {
+        options.data = { id: "x_group", form: "fmain_pa_questionssrch" };
+    } else {
+        options.ajax = { id: "x_group", form: "fmain_pa_questionssrch", limit: ew.LOOKUP_PAGE_SIZE };
+    }
+    options = Object.assign({}, ew.modalLookupOptions, options, ew.vars.tables.main_pa_questions.fields.group.modalLookupOptions);
+    ew.createModalLookup(options);
+});
+</script>
+</div>
+        <div class="d-flex my-1 my-sm-0">
+        </div><!-- /.ew-search-field -->
+    </div><!-- /.col-sm-auto -->
+<?php } ?>
+<?php if ($Page->question->Visible) { // question ?>
+<?php
+if (!$Page->question->UseFilter) {
+    $Page->SearchColumnCount++;
+}
+?>
+    <div id="xs_question" class="col-sm-auto d-sm-flex mb-3 px-0 pe-sm-2<?= $Page->question->UseFilter ? " ew-filter-field" : "" ?>">
+        <div class="d-flex my-1 my-sm-0">
+            <label for="x_question" class="ew-search-caption ew-label"><?= $Page->question->caption() ?></label>
+            <div class="ew-search-operator">
+<?= $Language->phrase("LIKE") ?>
+<input type="hidden" name="z_question" id="z_question" value="LIKE">
+</div>
+        </div>
+        <div id="el_main_pa_questions_question" class="ew-search-field">
+<input type="<?= $Page->question->getInputTextType() ?>" name="x_question" id="x_question" data-table="main_pa_questions" data-field="x_question" value="<?= $Page->question->EditValue ?>" size="35" placeholder="<?= HtmlEncode($Page->question->getPlaceHolder()) ?>"<?= $Page->question->editAttributes() ?>>
+<div class="invalid-feedback"><?= $Page->question->getErrorMessage(false) ?></div>
+</div>
+        <div class="d-flex my-1 my-sm-0">
+        </div><!-- /.ew-search-field -->
+    </div><!-- /.col-sm-auto -->
+<?php } ?>
+<?php if ($Page->description->Visible) { // description ?>
+<?php
+if (!$Page->description->UseFilter) {
+    $Page->SearchColumnCount++;
+}
+?>
+    <div id="xs_description" class="col-sm-auto d-sm-flex mb-3 px-0 pe-sm-2<?= $Page->description->UseFilter ? " ew-filter-field" : "" ?>">
+        <div class="d-flex my-1 my-sm-0">
+            <label for="x_description" class="ew-search-caption ew-label"><?= $Page->description->caption() ?></label>
+            <div class="ew-search-operator">
+<?= $Language->phrase("LIKE") ?>
+<input type="hidden" name="z_description" id="z_description" value="LIKE">
+</div>
+        </div>
+        <div id="el_main_pa_questions_description" class="ew-search-field">
+<input type="<?= $Page->description->getInputTextType() ?>" name="x_description" id="x_description" data-table="main_pa_questions" data-field="x_description" value="<?= $Page->description->EditValue ?>" size="35" placeholder="<?= HtmlEncode($Page->description->getPlaceHolder()) ?>"<?= $Page->description->editAttributes() ?>>
+<div class="invalid-feedback"><?= $Page->description->getErrorMessage(false) ?></div>
+</div>
+        <div class="d-flex my-1 my-sm-0">
+        </div><!-- /.ew-search-field -->
+    </div><!-- /.col-sm-auto -->
+<?php } ?>
+</div><!-- /.row -->
 <div class="row mb-0">
     <div class="col-sm-auto px-0 pe-sm-2">
         <div class="ew-basic-search input-group">
