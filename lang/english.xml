@@ -962,10 +962,10 @@
   <project>
     <phrase id="footertext" value="&amp;copy;2021 e.World Technology Limited. All rights reserved." />
     <menu id="62">
-      <phrase id="menutext" value="Pending Line Maneger One Appraisal" />
+      <phrase id="menutext" value="Pending Line Manager One Appraisal" />
     </menu>
     <menu id="63">
-      <phrase id="menutext" value="Pending Line Maneger Two Appraisal" />
+      <phrase id="menutext" value="Pending Line Manager Two Appraisal" />
     </menu>
     <menu id="64">
       <phrase id="menutext" value="Update Appraisal" />
