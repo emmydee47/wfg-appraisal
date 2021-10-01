@@ -110,9 +110,6 @@ $Page->ListOptions->render("header", "left");
 <?php if ($Page->createddate->Visible) { // createddate ?>
         <th data-name="createddate" class="<?= $Page->createddate->headerCellClass() ?>"><div id="elh_main_pa_employee_ratings_createddate" class="main_pa_employee_ratings_createddate"><?= $Page->renderFieldHeader($Page->createddate) ?></div></th>
 <?php } ?>
-<?php if ($Page->group_id->Visible) { // group_id ?>
-        <th data-name="group_id" class="<?= $Page->group_id->headerCellClass() ?>"><div id="elh_main_pa_employee_ratings_group_id" class="main_pa_employee_ratings_group_id"><?= $Page->renderFieldHeader($Page->group_id) ?></div></th>
-<?php } ?>
 <?php
 // Render list options (header, right)
 $Page->ListOptions->render("header", "right");
@@ -233,14 +230,6 @@ $Page->ListOptions->render("body", "left", $Page->RowCount);
 <span id="el<?= $Page->RowCount ?>_main_pa_employee_ratings_createddate" class="el_main_pa_employee_ratings_createddate">
 <span<?= $Page->createddate->viewAttributes() ?>>
 <?= $Page->createddate->getViewValue() ?></span>
-</span>
-</td>
-    <?php } ?>
-    <?php if ($Page->group_id->Visible) { // group_id ?>
-        <td data-name="group_id"<?= $Page->group_id->cellAttributes() ?>>
-<span id="el<?= $Page->RowCount ?>_main_pa_employee_ratings_group_id" class="el_main_pa_employee_ratings_group_id">
-<span<?= $Page->group_id->viewAttributes() ?>>
-<?= $Page->group_id->getViewValue() ?></span>
 </span>
 </td>
     <?php } ?>

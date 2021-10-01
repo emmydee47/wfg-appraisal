@@ -62,9 +62,6 @@ $Page->showMessage();
 <?php if ($Page->createddate->Visible) { // createddate ?>
         <th class="<?= $Page->createddate->headerCellClass() ?>"><span id="elh_main_pa_employee_ratings_createddate" class="main_pa_employee_ratings_createddate"><?= $Page->createddate->caption() ?></span></th>
 <?php } ?>
-<?php if ($Page->group_id->Visible) { // group_id ?>
-        <th class="<?= $Page->group_id->headerCellClass() ?>"><span id="elh_main_pa_employee_ratings_group_id" class="main_pa_employee_ratings_group_id"><?= $Page->group_id->caption() ?></span></th>
-<?php } ?>
     </tr>
     </thead>
     <tbody>
@@ -131,14 +128,6 @@ while (!$Page->Recordset->EOF) {
 <span id="el<?= $Page->RowCount ?>_main_pa_employee_ratings_createddate" class="el_main_pa_employee_ratings_createddate">
 <span<?= $Page->createddate->viewAttributes() ?>>
 <?= $Page->createddate->getViewValue() ?></span>
-</span>
-</td>
-<?php } ?>
-<?php if ($Page->group_id->Visible) { // group_id ?>
-        <td<?= $Page->group_id->cellAttributes() ?>>
-<span id="el<?= $Page->RowCount ?>_main_pa_employee_ratings_group_id" class="el_main_pa_employee_ratings_group_id">
-<span<?= $Page->group_id->viewAttributes() ?>>
-<?= $Page->group_id->getViewValue() ?></span>
 </span>
 </td>
 <?php } ?>
