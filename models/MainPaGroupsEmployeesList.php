@@ -59,9 +59,9 @@ class MainPaGroupsEmployeesList extends MainPaGroupsEmployees
     public $MultiUpdateUrl;
 
     // Audit Trail
-    public $AuditTrailOnAdd = false;
-    public $AuditTrailOnEdit = false;
-    public $AuditTrailOnDelete = false;
+    public $AuditTrailOnAdd = true;
+    public $AuditTrailOnEdit = true;
+    public $AuditTrailOnDelete = true;
     public $AuditTrailOnView = false;
     public $AuditTrailOnViewData = false;
     public $AuditTrailOnSearch = false;
@@ -601,6 +601,31 @@ class MainPaGroupsEmployeesList extends MainPaGroupsEmployees
 
         // Create form object
         $CurrentForm = new HttpForm();
+
+        // Get export parameters
+        $custom = "";
+        if (Param("export") !== null) {
+            $this->Export = Param("export");
+            $custom = Param("custom", "");
+        } elseif (IsPost()) {
+            if (Post("exporttype") !== null) {
+                $this->Export = Post("exporttype");
+            }
+            $custom = Post("custom", "");
+        } elseif (Get("cmd") == "json") {
+            $this->Export = Get("cmd");
+        } else {
+            $this->setExportReturnUrl(CurrentUrl());
+        }
+        $ExportFileName = $this->TableVar; // Get export file, used in header
+
+        // Get custom export parameters
+        if ($this->isExport() && $custom != "") {
+            $this->CustomExport = $this->Export;
+            $this->Export = "print";
+        }
+        $CustomExportType = $this->CustomExport;
+        $ExportType = $this->Export; // Get export parameter, used in header
         $this->CurrentAction = Param("action"); // Set up current action
 
         // Get grid add count
@@ -611,6 +636,9 @@ class MainPaGroupsEmployeesList extends MainPaGroupsEmployees
 
         // Set up list options
         $this->setupListOptions();
+
+        // Setup export options
+        $this->setupExportOptions();
         $this->id->setVisibility();
         $this->group_id->setVisibility();
         $this->employee_id->setVisibility();
@@ -759,8 +787,47 @@ class MainPaGroupsEmployeesList extends MainPaGroupsEmployees
                 }
             }
 
+            // Get default search criteria
+            AddFilter($this->DefaultSearchWhere, $this->basicSearchWhere(true));
+            AddFilter($this->DefaultSearchWhere, $this->advancedSearchWhere(true));
+
+            // Get basic search values
+            $this->loadBasicSearchValues();
+
+            // Get and validate search values for advanced search
+            if (EmptyValue($this->UserAction)) { // Skip if user action
+                $this->loadSearchValues();
+            }
+
+            // Process filter list
+            if ($this->processFilterList()) {
+                $this->terminate();
+                return;
+            }
+            if (!$this->validateSearch()) {
+                // Nothing to do
+            }
+
+            // Restore search parms from Session if not searching / reset / export
+            if (($this->isExport() || $this->Command != "search" && $this->Command != "reset" && $this->Command != "resetall") && $this->Command != "json" && $this->checkSearchParms()) {
+                $this->restoreSearchParms();
+            }
+
+            // Call Recordset SearchValidated event
+            $this->recordsetSearchValidated();
+
             // Set up sorting order
             $this->setupSortOrder();
+
+            // Get basic search criteria
+            if (!$this->hasInvalidFields()) {
+                $srchBasic = $this->basicSearchWhere();
+            }
+
+            // Get search criteria for advanced search
+            if (!$this->hasInvalidFields()) {
+                $srchAdvanced = $this->advancedSearchWhere();
+            }
         }
 
         // Restore display records
@@ -774,6 +841,41 @@ class MainPaGroupsEmployeesList extends MainPaGroupsEmployees
         // Load Sorting Order
         if ($this->Command != "json") {
             $this->loadSortOrder();
+        }
+
+        // Load search default if no existing search criteria
+        if (!$this->checkSearchParms()) {
+            // Load basic search from default
+            $this->BasicSearch->loadDefault();
+            if ($this->BasicSearch->Keyword != "") {
+                $srchBasic = $this->basicSearchWhere();
+            }
+
+            // Load advanced search from default
+            if ($this->loadAdvancedSearchDefault()) {
+                $srchAdvanced = $this->advancedSearchWhere();
+            }
+        }
+
+        // Restore search settings from Session
+        if (!$this->hasInvalidFields()) {
+            $this->loadAdvancedSearch();
+        }
+
+        // Build search criteria
+        AddFilter($this->SearchWhere, $srchAdvanced);
+        AddFilter($this->SearchWhere, $srchBasic);
+
+        // Call Recordset_Searching event
+        $this->recordsetSearching($this->SearchWhere);
+
+        // Save search criteria
+        if ($this->Command == "search" && !$this->RestoreSearch) {
+            $this->setSearchWhere($this->SearchWhere); // Save to Session
+            $this->StartRecord = 1; // Reset start record counter
+            $this->setStartRecordNumber($this->StartRecord);
+        } elseif ($this->Command != "json") {
+            $this->SearchWhere = $this->getSearchWhere();
         }
 
         // Build filter
@@ -812,6 +914,13 @@ class MainPaGroupsEmployeesList extends MainPaGroupsEmployees
             $this->setSessionWhere($filter);
             $this->CurrentFilter = "";
         }
+
+        // Export data only
+        if (!$this->CustomExport && in_array($this->Export, array_keys(Config("EXPORT_CLASSES")))) {
+            $this->exportData();
+            $this->terminate();
+            return;
+        }
         if ($this->isGridAdd()) {
             $this->CurrentFilter = "0=1";
             $this->StartRecord = 1;
@@ -839,6 +948,13 @@ class MainPaGroupsEmployeesList extends MainPaGroupsEmployees
                 } else {
                     $this->setWarningMessage($Language->phrase("NoRecord"));
                 }
+            }
+
+            // Audit trail on search
+            if ($this->AuditTrailOnSearch && $this->Command == "search" && !$this->RestoreSearch) {
+                $searchParm = ServerVar("QUERY_STRING");
+                $searchSql = $this->getSessionWhere();
+                $this->writeAuditTrailOnSearch($searchParm, $searchSql);
             }
         }
 
@@ -1301,6 +1417,333 @@ class MainPaGroupsEmployeesList extends MainPaGroupsEmployees
         $this->modifieddate->clearErrorMessage();
     }
 
+    // Get list of filters
+    public function getFilterList()
+    {
+        global $UserProfile;
+
+        // Initialize
+        $filterList = "";
+        $savedFilterList = "";
+        $filterList = Concat($filterList, $this->id->AdvancedSearch->toJson(), ","); // Field id
+        $filterList = Concat($filterList, $this->group_id->AdvancedSearch->toJson(), ","); // Field group_id
+        $filterList = Concat($filterList, $this->employee_id->AdvancedSearch->toJson(), ","); // Field employee_id
+        $filterList = Concat($filterList, $this->createdby->AdvancedSearch->toJson(), ","); // Field createdby
+        $filterList = Concat($filterList, $this->modifiedby->AdvancedSearch->toJson(), ","); // Field modifiedby
+        $filterList = Concat($filterList, $this->createddate->AdvancedSearch->toJson(), ","); // Field createddate
+        $filterList = Concat($filterList, $this->modifieddate->AdvancedSearch->toJson(), ","); // Field modifieddate
+        if ($this->BasicSearch->Keyword != "") {
+            $wrk = "\"" . Config("TABLE_BASIC_SEARCH") . "\":\"" . JsEncode($this->BasicSearch->Keyword) . "\",\"" . Config("TABLE_BASIC_SEARCH_TYPE") . "\":\"" . JsEncode($this->BasicSearch->Type) . "\"";
+            $filterList = Concat($filterList, $wrk, ",");
+        }
+
+        // Return filter list in JSON
+        if ($filterList != "") {
+            $filterList = "\"data\":{" . $filterList . "}";
+        }
+        if ($savedFilterList != "") {
+            $filterList = Concat($filterList, "\"filters\":" . $savedFilterList, ",");
+        }
+        return ($filterList != "") ? "{" . $filterList . "}" : "null";
+    }
+
+    // Process filter list
+    protected function processFilterList()
+    {
+        global $UserProfile;
+        if (Post("ajax") == "savefilters") { // Save filter request (Ajax)
+            $filters = Post("filters");
+            $UserProfile->setSearchFilters(CurrentUserName(), "fmain_pa_groups_employeessrch", $filters);
+            WriteJson([["success" => true]]); // Success
+            return true;
+        } elseif (Post("cmd") == "resetfilter") {
+            $this->restoreFilterList();
+        }
+        return false;
+    }
+
+    // Restore list of filters
+    protected function restoreFilterList()
+    {
+        // Return if not reset filter
+        if (Post("cmd") !== "resetfilter") {
+            return false;
+        }
+        $filter = json_decode(Post("filter"), true);
+        $this->Command = "search";
+
+        // Field id
+        $this->id->AdvancedSearch->SearchValue = @$filter["x_id"];
+        $this->id->AdvancedSearch->SearchOperator = @$filter["z_id"];
+        $this->id->AdvancedSearch->SearchCondition = @$filter["v_id"];
+        $this->id->AdvancedSearch->SearchValue2 = @$filter["y_id"];
+        $this->id->AdvancedSearch->SearchOperator2 = @$filter["w_id"];
+        $this->id->AdvancedSearch->save();
+
+        // Field group_id
+        $this->group_id->AdvancedSearch->SearchValue = @$filter["x_group_id"];
+        $this->group_id->AdvancedSearch->SearchOperator = @$filter["z_group_id"];
+        $this->group_id->AdvancedSearch->SearchCondition = @$filter["v_group_id"];
+        $this->group_id->AdvancedSearch->SearchValue2 = @$filter["y_group_id"];
+        $this->group_id->AdvancedSearch->SearchOperator2 = @$filter["w_group_id"];
+        $this->group_id->AdvancedSearch->save();
+
+        // Field employee_id
+        $this->employee_id->AdvancedSearch->SearchValue = @$filter["x_employee_id"];
+        $this->employee_id->AdvancedSearch->SearchOperator = @$filter["z_employee_id"];
+        $this->employee_id->AdvancedSearch->SearchCondition = @$filter["v_employee_id"];
+        $this->employee_id->AdvancedSearch->SearchValue2 = @$filter["y_employee_id"];
+        $this->employee_id->AdvancedSearch->SearchOperator2 = @$filter["w_employee_id"];
+        $this->employee_id->AdvancedSearch->save();
+
+        // Field createdby
+        $this->createdby->AdvancedSearch->SearchValue = @$filter["x_createdby"];
+        $this->createdby->AdvancedSearch->SearchOperator = @$filter["z_createdby"];
+        $this->createdby->AdvancedSearch->SearchCondition = @$filter["v_createdby"];
+        $this->createdby->AdvancedSearch->SearchValue2 = @$filter["y_createdby"];
+        $this->createdby->AdvancedSearch->SearchOperator2 = @$filter["w_createdby"];
+        $this->createdby->AdvancedSearch->save();
+
+        // Field modifiedby
+        $this->modifiedby->AdvancedSearch->SearchValue = @$filter["x_modifiedby"];
+        $this->modifiedby->AdvancedSearch->SearchOperator = @$filter["z_modifiedby"];
+        $this->modifiedby->AdvancedSearch->SearchCondition = @$filter["v_modifiedby"];
+        $this->modifiedby->AdvancedSearch->SearchValue2 = @$filter["y_modifiedby"];
+        $this->modifiedby->AdvancedSearch->SearchOperator2 = @$filter["w_modifiedby"];
+        $this->modifiedby->AdvancedSearch->save();
+
+        // Field createddate
+        $this->createddate->AdvancedSearch->SearchValue = @$filter["x_createddate"];
+        $this->createddate->AdvancedSearch->SearchOperator = @$filter["z_createddate"];
+        $this->createddate->AdvancedSearch->SearchCondition = @$filter["v_createddate"];
+        $this->createddate->AdvancedSearch->SearchValue2 = @$filter["y_createddate"];
+        $this->createddate->AdvancedSearch->SearchOperator2 = @$filter["w_createddate"];
+        $this->createddate->AdvancedSearch->save();
+
+        // Field modifieddate
+        $this->modifieddate->AdvancedSearch->SearchValue = @$filter["x_modifieddate"];
+        $this->modifieddate->AdvancedSearch->SearchOperator = @$filter["z_modifieddate"];
+        $this->modifieddate->AdvancedSearch->SearchCondition = @$filter["v_modifieddate"];
+        $this->modifieddate->AdvancedSearch->SearchValue2 = @$filter["y_modifieddate"];
+        $this->modifieddate->AdvancedSearch->SearchOperator2 = @$filter["w_modifieddate"];
+        $this->modifieddate->AdvancedSearch->save();
+        $this->BasicSearch->setKeyword(@$filter[Config("TABLE_BASIC_SEARCH")]);
+        $this->BasicSearch->setType(@$filter[Config("TABLE_BASIC_SEARCH_TYPE")]);
+    }
+
+    // Advanced search WHERE clause based on QueryString
+    protected function advancedSearchWhere($default = false)
+    {
+        global $Security;
+        $where = "";
+        if (!$Security->canSearch()) {
+            return "";
+        }
+        $this->buildSearchSql($where, $this->id, $default, false); // id
+        $this->buildSearchSql($where, $this->group_id, $default, false); // group_id
+        $this->buildSearchSql($where, $this->employee_id, $default, false); // employee_id
+        $this->buildSearchSql($where, $this->createdby, $default, false); // createdby
+        $this->buildSearchSql($where, $this->modifiedby, $default, false); // modifiedby
+        $this->buildSearchSql($where, $this->createddate, $default, false); // createddate
+        $this->buildSearchSql($where, $this->modifieddate, $default, false); // modifieddate
+
+        // Set up search parm
+        if (!$default && $where != "" && in_array($this->Command, ["", "reset", "resetall"])) {
+            $this->Command = "search";
+        }
+        if (!$default && $this->Command == "search") {
+            $this->id->AdvancedSearch->save(); // id
+            $this->group_id->AdvancedSearch->save(); // group_id
+            $this->employee_id->AdvancedSearch->save(); // employee_id
+            $this->createdby->AdvancedSearch->save(); // createdby
+            $this->modifiedby->AdvancedSearch->save(); // modifiedby
+            $this->createddate->AdvancedSearch->save(); // createddate
+            $this->modifieddate->AdvancedSearch->save(); // modifieddate
+        }
+        return $where;
+    }
+
+    // Build search SQL
+    protected function buildSearchSql(&$where, &$fld, $default, $multiValue)
+    {
+        $fldParm = $fld->Param;
+        $fldVal = $default ? $fld->AdvancedSearch->SearchValueDefault : $fld->AdvancedSearch->SearchValue;
+        $fldOpr = $default ? $fld->AdvancedSearch->SearchOperatorDefault : $fld->AdvancedSearch->SearchOperator;
+        $fldCond = $default ? $fld->AdvancedSearch->SearchConditionDefault : $fld->AdvancedSearch->SearchCondition;
+        $fldVal2 = $default ? $fld->AdvancedSearch->SearchValue2Default : $fld->AdvancedSearch->SearchValue2;
+        $fldOpr2 = $default ? $fld->AdvancedSearch->SearchOperator2Default : $fld->AdvancedSearch->SearchOperator2;
+        $wrk = "";
+        if (is_array($fldVal)) {
+            $fldVal = implode(Config("MULTIPLE_OPTION_SEPARATOR"), $fldVal);
+        }
+        if (is_array($fldVal2)) {
+            $fldVal2 = implode(Config("MULTIPLE_OPTION_SEPARATOR"), $fldVal2);
+        }
+        $fldOpr = strtoupper(trim($fldOpr));
+        if ($fldOpr == "") {
+            $fldOpr = "=";
+        }
+        $fldOpr2 = strtoupper(trim($fldOpr2));
+        if ($fldOpr2 == "") {
+            $fldOpr2 = "=";
+        }
+        if (Config("SEARCH_MULTI_VALUE_OPTION") == 1 && !$fld->UseFilter || !IsMultiSearchOperator($fldOpr)) {
+            $multiValue = false;
+        }
+        if ($multiValue) {
+            $wrk = $fldVal != "" ? GetMultiSearchSql($fld, $fldOpr, $fldVal, $this->Dbid) : ""; // Field value 1
+            $wrk2 = $fldVal2 != "" ? GetMultiSearchSql($fld, $fldOpr2, $fldVal2, $this->Dbid) : ""; // Field value 2
+            AddFilter($wrk, $wrk2, $fldCond);
+        } else {
+            $fldVal = $this->convertSearchValue($fld, $fldVal);
+            $fldVal2 = $this->convertSearchValue($fld, $fldVal2);
+            $wrk = GetSearchSql($fld, $fldVal, $fldOpr, $fldCond, $fldVal2, $fldOpr2, $this->Dbid);
+        }
+        if ($this->SearchOption == "AUTO" && in_array($this->BasicSearch->getType(), ["AND", "OR"])) {
+            $cond = $this->BasicSearch->getType();
+        } else {
+            $cond = SameText($this->SearchOption, "OR") ? "OR" : "AND";
+        }
+        AddFilter($where, $wrk, $cond);
+    }
+
+    // Convert search value
+    protected function convertSearchValue(&$fld, $fldVal)
+    {
+        if ($fldVal == Config("NULL_VALUE") || $fldVal == Config("NOT_NULL_VALUE")) {
+            return $fldVal;
+        }
+        $value = $fldVal;
+        if ($fld->isBoolean()) {
+            if ($fldVal != "") {
+                $value = (SameText($fldVal, "1") || SameText($fldVal, "y") || SameText($fldVal, "t")) ? $fld->TrueValue : $fld->FalseValue;
+            }
+        } elseif ($fld->DataType == DATATYPE_DATE || $fld->DataType == DATATYPE_TIME) {
+            if ($fldVal != "") {
+                $value = UnFormatDateTime($fldVal, $fld->formatPattern());
+            }
+        }
+        return $value;
+    }
+
+    // Return basic search WHERE clause based on search keyword and type
+    protected function basicSearchWhere($default = false)
+    {
+        global $Security;
+        $searchStr = "";
+        if (!$Security->canSearch()) {
+            return "";
+        }
+
+        // Fields to search
+        $searchFlds = [];
+        $searchFlds[] = &$this->group_id;
+        $searchFlds[] = &$this->employee_id;
+        $searchKeyword = $default ? $this->BasicSearch->KeywordDefault : $this->BasicSearch->Keyword;
+        $searchType = $default ? $this->BasicSearch->TypeDefault : $this->BasicSearch->Type;
+
+        // Get search SQL
+        if ($searchKeyword != "") {
+            $ar = $this->BasicSearch->keywordList($default);
+            $searchStr = GetQuickSearchFilter($searchFlds, $ar, $searchType, Config("BASIC_SEARCH_ANY_FIELDS"), $this->Dbid);
+            if (!$default && in_array($this->Command, ["", "reset", "resetall"])) {
+                $this->Command = "search";
+            }
+        }
+        if (!$default && $this->Command == "search") {
+            $this->BasicSearch->setKeyword($searchKeyword);
+            $this->BasicSearch->setType($searchType);
+        }
+        return $searchStr;
+    }
+
+    // Check if search parm exists
+    protected function checkSearchParms()
+    {
+        // Check basic search
+        if ($this->BasicSearch->issetSession()) {
+            return true;
+        }
+        if ($this->id->AdvancedSearch->issetSession()) {
+            return true;
+        }
+        if ($this->group_id->AdvancedSearch->issetSession()) {
+            return true;
+        }
+        if ($this->employee_id->AdvancedSearch->issetSession()) {
+            return true;
+        }
+        if ($this->createdby->AdvancedSearch->issetSession()) {
+            return true;
+        }
+        if ($this->modifiedby->AdvancedSearch->issetSession()) {
+            return true;
+        }
+        if ($this->createddate->AdvancedSearch->issetSession()) {
+            return true;
+        }
+        if ($this->modifieddate->AdvancedSearch->issetSession()) {
+            return true;
+        }
+        return false;
+    }
+
+    // Clear all search parameters
+    protected function resetSearchParms()
+    {
+        // Clear search WHERE clause
+        $this->SearchWhere = "";
+        $this->setSearchWhere($this->SearchWhere);
+
+        // Clear basic search parameters
+        $this->resetBasicSearchParms();
+
+        // Clear advanced search parameters
+        $this->resetAdvancedSearchParms();
+    }
+
+    // Load advanced search default values
+    protected function loadAdvancedSearchDefault()
+    {
+        return false;
+    }
+
+    // Clear all basic search parameters
+    protected function resetBasicSearchParms()
+    {
+        $this->BasicSearch->unsetSession();
+    }
+
+    // Clear all advanced search parameters
+    protected function resetAdvancedSearchParms()
+    {
+        $this->id->AdvancedSearch->unsetSession();
+        $this->group_id->AdvancedSearch->unsetSession();
+        $this->employee_id->AdvancedSearch->unsetSession();
+        $this->createdby->AdvancedSearch->unsetSession();
+        $this->modifiedby->AdvancedSearch->unsetSession();
+        $this->createddate->AdvancedSearch->unsetSession();
+        $this->modifieddate->AdvancedSearch->unsetSession();
+    }
+
+    // Restore all search parameters
+    protected function restoreSearchParms()
+    {
+        $this->RestoreSearch = true;
+
+        // Restore basic search values
+        $this->BasicSearch->load();
+
+        // Restore advanced search values
+        $this->id->AdvancedSearch->load();
+        $this->group_id->AdvancedSearch->load();
+        $this->employee_id->AdvancedSearch->load();
+        $this->createdby->AdvancedSearch->load();
+        $this->modifiedby->AdvancedSearch->load();
+        $this->createddate->AdvancedSearch->load();
+        $this->modifieddate->AdvancedSearch->load();
+    }
+
     // Set up sort parameters
     protected function setupSortOrder()
     {
@@ -1343,6 +1786,11 @@ class MainPaGroupsEmployeesList extends MainPaGroupsEmployees
     {
         // Check if reset command
         if (StartsString("reset", $this->Command)) {
+            // Reset search criteria
+            if ($this->Command == "reset" || $this->Command == "resetall") {
+                $this->resetSearchParms();
+            }
+
             // Reset master/detail keys
             if ($this->Command == "resetall") {
                 $this->setCurrentMasterTable(""); // Clear master table
@@ -1637,10 +2085,10 @@ class MainPaGroupsEmployeesList extends MainPaGroupsEmployees
         // Filter button
         $item = &$this->FilterOptions->add("savecurrentfilter");
         $item->Body = "<a class=\"ew-save-filter\" data-form=\"fmain_pa_groups_employeessrch\" data-ew-action=\"none\">" . $Language->phrase("SaveCurrentFilter") . "</a>";
-        $item->Visible = false;
+        $item->Visible = true;
         $item = &$this->FilterOptions->add("deletefilter");
         $item->Body = "<a class=\"ew-delete-filter\" data-form=\"fmain_pa_groups_employeessrch\" data-ew-action=\"none\">" . $Language->phrase("DeleteFilter") . "</a>";
-        $item->Visible = false;
+        $item->Visible = true;
         $this->FilterOptions->UseDropDownButton = true;
         $this->FilterOptions->UseButtonGroup = !$this->FilterOptions->UseDropDownButton;
         $this->FilterOptions->DropDownButtonPhrase = $Language->phrase("Filters");
@@ -1848,6 +2296,80 @@ class MainPaGroupsEmployeesList extends MainPaGroupsEmployees
         $this->createddate->OldValue = $this->createddate->CurrentValue;
         $this->modifieddate->CurrentValue = null;
         $this->modifieddate->OldValue = $this->modifieddate->CurrentValue;
+    }
+
+    // Load basic search values
+    protected function loadBasicSearchValues()
+    {
+        $this->BasicSearch->setKeyword(Get(Config("TABLE_BASIC_SEARCH"), ""), false);
+        if ($this->BasicSearch->Keyword != "" && $this->Command == "") {
+            $this->Command = "search";
+        }
+        $this->BasicSearch->setType(Get(Config("TABLE_BASIC_SEARCH_TYPE"), ""), false);
+    }
+
+    // Load search values for validation
+    protected function loadSearchValues()
+    {
+        // Load search values
+        $hasValue = false;
+
+        // id
+        if ($this->id->AdvancedSearch->get()) {
+            $hasValue = true;
+            if (($this->id->AdvancedSearch->SearchValue != "" || $this->id->AdvancedSearch->SearchValue2 != "") && $this->Command == "") {
+                $this->Command = "search";
+            }
+        }
+
+        // group_id
+        if ($this->group_id->AdvancedSearch->get()) {
+            $hasValue = true;
+            if (($this->group_id->AdvancedSearch->SearchValue != "" || $this->group_id->AdvancedSearch->SearchValue2 != "") && $this->Command == "") {
+                $this->Command = "search";
+            }
+        }
+
+        // employee_id
+        if ($this->employee_id->AdvancedSearch->get()) {
+            $hasValue = true;
+            if (($this->employee_id->AdvancedSearch->SearchValue != "" || $this->employee_id->AdvancedSearch->SearchValue2 != "") && $this->Command == "") {
+                $this->Command = "search";
+            }
+        }
+
+        // createdby
+        if ($this->createdby->AdvancedSearch->get()) {
+            $hasValue = true;
+            if (($this->createdby->AdvancedSearch->SearchValue != "" || $this->createdby->AdvancedSearch->SearchValue2 != "") && $this->Command == "") {
+                $this->Command = "search";
+            }
+        }
+
+        // modifiedby
+        if ($this->modifiedby->AdvancedSearch->get()) {
+            $hasValue = true;
+            if (($this->modifiedby->AdvancedSearch->SearchValue != "" || $this->modifiedby->AdvancedSearch->SearchValue2 != "") && $this->Command == "") {
+                $this->Command = "search";
+            }
+        }
+
+        // createddate
+        if ($this->createddate->AdvancedSearch->get()) {
+            $hasValue = true;
+            if (($this->createddate->AdvancedSearch->SearchValue != "" || $this->createddate->AdvancedSearch->SearchValue2 != "") && $this->Command == "") {
+                $this->Command = "search";
+            }
+        }
+
+        // modifieddate
+        if ($this->modifieddate->AdvancedSearch->get()) {
+            $hasValue = true;
+            if (($this->modifieddate->AdvancedSearch->SearchValue != "" || $this->modifieddate->AdvancedSearch->SearchValue2 != "") && $this->Command == "") {
+                $this->Command = "search";
+            }
+        }
+        return $hasValue;
     }
 
     // Load form values
@@ -2449,6 +2971,96 @@ class MainPaGroupsEmployeesList extends MainPaGroupsEmployees
             // modifieddate
             $this->modifieddate->LinkCustomAttributes = "";
             $this->modifieddate->HrefValue = "";
+        } elseif ($this->RowType == ROWTYPE_SEARCH) {
+            // id
+            $this->id->setupEditAttributes();
+            $this->id->EditCustomAttributes = "";
+            $this->id->EditValue = HtmlEncode($this->id->AdvancedSearch->SearchValue);
+            $this->id->PlaceHolder = RemoveHtml($this->id->caption());
+
+            // group_id
+            $this->group_id->EditCustomAttributes = "";
+            $curVal = trim(strval($this->group_id->AdvancedSearch->SearchValue));
+            if ($curVal != "") {
+                $this->group_id->AdvancedSearch->ViewValue = $this->group_id->lookupCacheOption($curVal);
+            } else {
+                $this->group_id->AdvancedSearch->ViewValue = $this->group_id->Lookup !== null && is_array($this->group_id->lookupOptions()) ? $curVal : null;
+            }
+            if ($this->group_id->AdvancedSearch->ViewValue !== null) { // Load from cache
+                $this->group_id->EditValue = array_values($this->group_id->lookupOptions());
+                if ($this->group_id->AdvancedSearch->ViewValue == "") {
+                    $this->group_id->AdvancedSearch->ViewValue = $Language->phrase("PleaseSelect");
+                }
+            } else { // Lookup from database
+                if ($curVal == "") {
+                    $filterWrk = "0=1";
+                } else {
+                    $filterWrk = "`id`" . SearchString("=", $this->group_id->AdvancedSearch->SearchValue, DATATYPE_NUMBER, "");
+                }
+                $sqlWrk = $this->group_id->Lookup->getSql(true, $filterWrk, '', $this, false, true);
+                $conn = Conn();
+                $config = $conn->getConfiguration();
+                $config->setResultCacheImpl($this->Cache);
+                $rswrk = $conn->executeCacheQuery($sqlWrk, [], [], $this->CacheProfile)->fetchAll();
+                $ari = count($rswrk);
+                if ($ari > 0) { // Lookup values found
+                    $arwrk = $this->group_id->Lookup->renderViewRow($rswrk[0]);
+                    $this->group_id->AdvancedSearch->ViewValue = $this->group_id->displayValue($arwrk);
+                } else {
+                    $this->group_id->AdvancedSearch->ViewValue = $Language->phrase("PleaseSelect");
+                }
+                $arwrk = $rswrk;
+                $this->group_id->EditValue = $arwrk;
+            }
+            $this->group_id->PlaceHolder = RemoveHtml($this->group_id->caption());
+
+            // employee_id
+            $this->employee_id->EditCustomAttributes = "";
+            $curVal = trim(strval($this->employee_id->AdvancedSearch->SearchValue));
+            if ($curVal != "") {
+                $this->employee_id->AdvancedSearch->ViewValue = $this->employee_id->lookupCacheOption($curVal);
+            } else {
+                $this->employee_id->AdvancedSearch->ViewValue = $this->employee_id->Lookup !== null && is_array($this->employee_id->lookupOptions()) ? $curVal : null;
+            }
+            if ($this->employee_id->AdvancedSearch->ViewValue !== null) { // Load from cache
+                $this->employee_id->EditValue = array_values($this->employee_id->lookupOptions());
+                if ($this->employee_id->AdvancedSearch->ViewValue == "") {
+                    $this->employee_id->AdvancedSearch->ViewValue = $Language->phrase("PleaseSelect");
+                }
+            } else { // Lookup from database
+                if ($curVal == "") {
+                    $filterWrk = "0=1";
+                } else {
+                    $filterWrk = "`id`" . SearchString("=", $this->employee_id->AdvancedSearch->SearchValue, DATATYPE_NUMBER, "");
+                }
+                $sqlWrk = $this->employee_id->Lookup->getSql(true, $filterWrk, '', $this, false, true);
+                $conn = Conn();
+                $config = $conn->getConfiguration();
+                $config->setResultCacheImpl($this->Cache);
+                $rswrk = $conn->executeCacheQuery($sqlWrk, [], [], $this->CacheProfile)->fetchAll();
+                $ari = count($rswrk);
+                if ($ari > 0) { // Lookup values found
+                    $arwrk = $this->employee_id->Lookup->renderViewRow($rswrk[0]);
+                    $this->employee_id->AdvancedSearch->ViewValue = $this->employee_id->displayValue($arwrk);
+                } else {
+                    $this->employee_id->AdvancedSearch->ViewValue = $Language->phrase("PleaseSelect");
+                }
+                $arwrk = $rswrk;
+                $this->employee_id->EditValue = $arwrk;
+            }
+            $this->employee_id->PlaceHolder = RemoveHtml($this->employee_id->caption());
+
+            // createddate
+            $this->createddate->setupEditAttributes();
+            $this->createddate->EditCustomAttributes = "";
+            $this->createddate->EditValue = HtmlEncode(FormatDateTime(UnFormatDateTime($this->createddate->AdvancedSearch->SearchValue, $this->createddate->formatPattern()), 8));
+            $this->createddate->PlaceHolder = RemoveHtml($this->createddate->caption());
+
+            // modifieddate
+            $this->modifieddate->setupEditAttributes();
+            $this->modifieddate->EditCustomAttributes = "";
+            $this->modifieddate->EditValue = HtmlEncode(FormatDateTime(UnFormatDateTime($this->modifieddate->AdvancedSearch->SearchValue, $this->modifieddate->formatPattern()), 8));
+            $this->modifieddate->PlaceHolder = RemoveHtml($this->modifieddate->caption());
         }
         if ($this->RowType == ROWTYPE_ADD || $this->RowType == ROWTYPE_EDIT || $this->RowType == ROWTYPE_SEARCH) { // Add/Edit/Search row
             $this->setupFieldTitles();
@@ -2458,6 +3070,26 @@ class MainPaGroupsEmployeesList extends MainPaGroupsEmployees
         if ($this->RowType != ROWTYPE_AGGREGATEINIT) {
             $this->rowRendered();
         }
+    }
+
+    // Validate search
+    protected function validateSearch()
+    {
+        // Check if validation required
+        if (!Config("SERVER_VALIDATE")) {
+            return true;
+        }
+
+        // Return validate result
+        $validateSearch = !$this->hasInvalidFields();
+
+        // Call Form_CustomValidate event
+        $formCustomError = "";
+        $validateSearch = $validateSearch && $this->formCustomValidate($formCustomError);
+        if ($formCustomError != "") {
+            $this->setFailureMessage($formCustomError);
+        }
+        return $validateSearch;
     }
 
     // Validate form
@@ -2522,6 +3154,9 @@ class MainPaGroupsEmployeesList extends MainPaGroupsEmployees
         if (count($rows) == 0) {
             $this->setFailureMessage($Language->phrase("NoRecord")); // No record found
             return false;
+        }
+        if ($this->AuditTrailOnDelete) {
+            $this->writeAuditTrailDummy($Language->phrase("BatchDeleteBegin")); // Batch delete begin
         }
 
         // Clone old rows
@@ -2778,12 +3413,132 @@ class MainPaGroupsEmployeesList extends MainPaGroupsEmployees
         return $addRow;
     }
 
+    // Load advanced search
+    public function loadAdvancedSearch()
+    {
+        $this->id->AdvancedSearch->load();
+        $this->group_id->AdvancedSearch->load();
+        $this->employee_id->AdvancedSearch->load();
+        $this->createdby->AdvancedSearch->load();
+        $this->modifiedby->AdvancedSearch->load();
+        $this->createddate->AdvancedSearch->load();
+        $this->modifieddate->AdvancedSearch->load();
+    }
+
+    // Get export HTML tag
+    protected function getExportTag($type, $custom = false)
+    {
+        global $Language;
+        $pageUrl = $this->pageUrl();
+        $exportUrl = GetUrl($pageUrl . "export=" . $type . ($custom ? "&amp;custom=1" : ""));
+        if (SameText($type, "excel")) {
+            if ($custom) {
+                return "<button type=\"button\" class=\"btn btn-default ew-export-link ew-excel\" title=\"" . HtmlEncode($Language->phrase("ExportToExcelText")) . "\" data-caption=\"" . HtmlEncode($Language->phrase("ExportToExcelText")) . "\" form=\"fmain_pa_groups_employeeslist\" data-url=\"$exportUrl\" data-ew-action=\"export\" data-export=\"excel\" data-custom=\"true\" data-export-selected=\"false\">" . $Language->phrase("ExportToExcel") . "</button>";
+            } else {
+                return "<a href=\"$exportUrl\" class=\"btn btn-default ew-export-link ew-excel\" title=\"" . HtmlEncode($Language->phrase("ExportToExcelText")) . "\" data-caption=\"" . HtmlEncode($Language->phrase("ExportToExcelText")) . "\">" . $Language->phrase("ExportToExcel") . "</a>";
+            }
+        } elseif (SameText($type, "word")) {
+            if ($custom) {
+                return "<button type=\"button\" class=\"btn btn-default ew-export-link ew-word\" title=\"" . HtmlEncode($Language->phrase("ExportToWordText")) . "\" data-caption=\"" . HtmlEncode($Language->phrase("ExportToWordText")) . "\" form=\"fmain_pa_groups_employeeslist\" data-url=\"$exportUrl\" data-ew-action=\"export\" data-export=\"word\" data-custom=\"true\" data-export-selected=\"false\">" . $Language->phrase("ExportToWord") . "</button>";
+            } else {
+                return "<a href=\"$exportUrl\" class=\"btn btn-default ew-export-link ew-word\" title=\"" . HtmlEncode($Language->phrase("ExportToWordText")) . "\" data-caption=\"" . HtmlEncode($Language->phrase("ExportToWordText")) . "\">" . $Language->phrase("ExportToWord") . "</a>";
+            }
+        } elseif (SameText($type, "pdf")) {
+            if ($custom) {
+                return "<button type=\"button\" class=\"btn btn-default ew-export-link ew-pdf\" title=\"" . HtmlEncode($Language->phrase("ExportToPdfText")) . "\" data-caption=\"" . HtmlEncode($Language->phrase("ExportToPdfText")) . "\" form=\"fmain_pa_groups_employeeslist\" data-url=\"$exportUrl\" data-ew-action=\"export\" data-export=\"pdf\" data-custom=\"true\" data-export-selected=\"false\">" . $Language->phrase("ExportToPdf") . "</button>";
+            } else {
+                return "<a href=\"$exportUrl\" class=\"btn btn-default ew-export-link ew-pdf\" title=\"" . HtmlEncode($Language->phrase("ExportToPdfText")) . "\" data-caption=\"" . HtmlEncode($Language->phrase("ExportToPdfText")) . "\">" . $Language->phrase("ExportToPdf") . "</a>";
+            }
+        } elseif (SameText($type, "html")) {
+            return "<a href=\"$exportUrl\" class=\"btn btn-default ew-export-link ew-html\" title=\"" . HtmlEncode($Language->phrase("ExportToHtmlText")) . "\" data-caption=\"" . HtmlEncode($Language->phrase("ExportToHtmlText")) . "\">" . $Language->phrase("ExportToHtml") . "</a>";
+        } elseif (SameText($type, "xml")) {
+            return "<a href=\"$exportUrl\" class=\"btn btn-default ew-export-link ew-xml\" title=\"" . HtmlEncode($Language->phrase("ExportToXmlText")) . "\" data-caption=\"" . HtmlEncode($Language->phrase("ExportToXmlText")) . "\">" . $Language->phrase("ExportToXml") . "</a>";
+        } elseif (SameText($type, "csv")) {
+            return "<a href=\"$exportUrl\" class=\"btn btn-default ew-export-link ew-csv\" title=\"" . HtmlEncode($Language->phrase("ExportToCsvText")) . "\" data-caption=\"" . HtmlEncode($Language->phrase("ExportToCsvText")) . "\">" . $Language->phrase("ExportToCsv") . "</a>";
+        } elseif (SameText($type, "email")) {
+            $url = $custom ? ' data-url="' . $exportUrl . '"' : '';
+            return '<button type="button" class="btn btn-default ew-export-link ew-email" title="' . $Language->phrase("ExportToEmailText") . '" data-caption="' . $Language->phrase("ExportToEmailText") . '" form="fmain_pa_groups_employeeslist" data-ew-action="email" data-hdr="' . $Language->phrase("ExportToEmailText") . '" data-sel="false"' . $url . '>' . $Language->phrase("ExportToEmail") . '</button>';
+        } elseif (SameText($type, "print")) {
+            return "<a href=\"$exportUrl\" class=\"btn btn-default ew-export-link ew-print\" title=\"" . HtmlEncode($Language->phrase("ExportToPrintText")) . "\" data-caption=\"" . HtmlEncode($Language->phrase("ExportToPrintText")) . "\">" . $Language->phrase("PrinterFriendly") . "</a>";
+        }
+    }
+
+    // Set up export options
+    protected function setupExportOptions()
+    {
+        global $Language;
+
+        // Printer friendly
+        $item = &$this->ExportOptions->add("print");
+        $item->Body = $this->getExportTag("print");
+        $item->Visible = false;
+
+        // Export to Excel
+        $item = &$this->ExportOptions->add("excel");
+        $item->Body = $this->getExportTag("excel");
+        $item->Visible = true;
+
+        // Export to Word
+        $item = &$this->ExportOptions->add("word");
+        $item->Body = $this->getExportTag("word");
+        $item->Visible = false;
+
+        // Export to HTML
+        $item = &$this->ExportOptions->add("html");
+        $item->Body = $this->getExportTag("html");
+        $item->Visible = false;
+
+        // Export to XML
+        $item = &$this->ExportOptions->add("xml");
+        $item->Body = $this->getExportTag("xml");
+        $item->Visible = false;
+
+        // Export to CSV
+        $item = &$this->ExportOptions->add("csv");
+        $item->Body = $this->getExportTag("csv");
+        $item->Visible = true;
+
+        // Export to PDF
+        $item = &$this->ExportOptions->add("pdf");
+        $item->Body = $this->getExportTag("pdf");
+        $item->Visible = false;
+
+        // Export to Email
+        $item = &$this->ExportOptions->add("email");
+        $item->Body = $this->getExportTag("email");
+        $item->Visible = false;
+
+        // Drop down button for export
+        $this->ExportOptions->UseButtonGroup = true;
+        $this->ExportOptions->UseDropDownButton = false;
+        if ($this->ExportOptions->UseButtonGroup && IsMobile()) {
+            $this->ExportOptions->UseDropDownButton = true;
+        }
+        $this->ExportOptions->DropDownButtonPhrase = $Language->phrase("ButtonExport");
+
+        // Add group option item
+        $item = &$this->ExportOptions->addGroupOption();
+        $item->Body = "";
+        $item->Visible = false;
+    }
+
     // Set up search options
     protected function setupSearchOptions()
     {
         global $Language, $Security;
         $pageUrl = $this->pageUrl();
         $this->SearchOptions = new ListOptions(["TagClassName" => "ew-search-option"]);
+
+        // Search button
+        $item = &$this->SearchOptions->add("searchtoggle");
+        $searchToggleClass = ($this->SearchWhere != "") ? " active" : " active";
+        $item->Body = "<a class=\"btn btn-default ew-search-toggle" . $searchToggleClass . "\" href=\"#\" role=\"button\" title=\"" . $Language->phrase("SearchPanel") . "\" data-caption=\"" . $Language->phrase("SearchPanel") . "\" data-bs-toggle=\"button\" data-form=\"fmain_pa_groups_employeessrch\" aria-pressed=\"" . ($searchToggleClass == " active" ? "true" : "false") . "\">" . $Language->phrase("SearchLink") . "</a>";
+        $item->Visible = true;
+
+        // Show all button
+        $item = &$this->SearchOptions->add("showall");
+        $item->Body = "<a class=\"btn btn-default ew-show-all\" title=\"" . $Language->phrase("ShowAll") . "\" data-caption=\"" . $Language->phrase("ShowAll") . "\" href=\"" . $pageUrl . "cmd=reset\">" . $Language->phrase("ShowAllBtn") . "</a>";
+        $item->Visible = ($this->SearchWhere != $this->DefaultSearchWhere && $this->SearchWhere != "0=101");
 
         // Button group for search
         $this->SearchOptions->UseDropDownButton = false;
@@ -2808,7 +3563,7 @@ class MainPaGroupsEmployeesList extends MainPaGroupsEmployees
     // Check if any search fields
     public function hasSearchFields()
     {
-        return false;
+        return true;
     }
 
     // Render search options
@@ -2816,6 +3571,119 @@ class MainPaGroupsEmployeesList extends MainPaGroupsEmployees
     {
         if (!$this->hasSearchFields() && $this->SearchOptions["searchtoggle"]) {
             $this->SearchOptions["searchtoggle"]->Visible = false;
+        }
+    }
+
+    /**
+    * Export data in HTML/CSV/Word/Excel/XML/Email/PDF format
+    *
+    * @param bool $return Return the data rather than output it
+    * @return mixed
+    */
+    public function exportData($return = false)
+    {
+        global $Language;
+        $utf8 = SameText(Config("PROJECT_CHARSET"), "utf-8");
+
+        // Load recordset
+        $this->TotalRecords = $this->listRecordCount();
+        $this->StartRecord = 1;
+
+        // Export all
+        if ($this->ExportAll) {
+            if (Config("EXPORT_ALL_TIME_LIMIT") >= 0) {
+                @set_time_limit(Config("EXPORT_ALL_TIME_LIMIT"));
+            }
+            $this->DisplayRecords = $this->TotalRecords;
+            $this->StopRecord = $this->TotalRecords;
+        } else { // Export one page only
+            $this->setupStartRecord(); // Set up start record position
+            // Set the last record to display
+            if ($this->DisplayRecords <= 0) {
+                $this->StopRecord = $this->TotalRecords;
+            } else {
+                $this->StopRecord = $this->StartRecord + $this->DisplayRecords - 1;
+            }
+        }
+        $rs = $this->loadRecordset($this->StartRecord - 1, $this->DisplayRecords <= 0 ? $this->TotalRecords : $this->DisplayRecords);
+        $this->ExportDoc = GetExportDocument($this, "h");
+        $doc = &$this->ExportDoc;
+        if (!$doc) {
+            $this->setFailureMessage($Language->phrase("ExportClassNotFound")); // Export class not found
+        }
+        if (!$rs || !$doc) {
+            RemoveHeader("Content-Type"); // Remove header
+            RemoveHeader("Content-Disposition");
+            $this->showMessage();
+            return;
+        }
+        $this->StartRecord = 1;
+        $this->StopRecord = $this->DisplayRecords <= 0 ? $this->TotalRecords : $this->DisplayRecords;
+
+        // Call Page Exporting server event
+        $this->ExportDoc->ExportCustom = !$this->pageExporting();
+
+        // Export master record
+        if (Config("EXPORT_MASTER_RECORD") && $this->DbMasterFilter != "" && $this->getCurrentMasterTable() == "main_pa_groups") {
+            $main_pa_groups = Container("main_pa_groups");
+            $rsmaster = $main_pa_groups->loadRs($this->DbMasterFilter); // Load master record
+            if ($rsmaster) {
+                $exportStyle = $doc->Style;
+                $doc->setStyle("v"); // Change to vertical
+                if (!$this->isExport("csv") || Config("EXPORT_MASTER_RECORD_FOR_CSV")) {
+                    $doc->Table = $main_pa_groups;
+                    $main_pa_groups->exportDocument($doc, new Recordset($rsmaster));
+                    $doc->exportEmptyRow();
+                    $doc->Table = &$this;
+                }
+                $doc->setStyle($exportStyle); // Restore
+            }
+        }
+        $header = $this->PageHeader;
+        $this->pageDataRendering($header);
+        $doc->Text .= $header;
+        $this->exportDocument($doc, $rs, $this->StartRecord, $this->StopRecord, "");
+        $footer = $this->PageFooter;
+        $this->pageDataRendered($footer);
+        $doc->Text .= $footer;
+
+        // Close recordset
+        $rs->close();
+
+        // Call Page Exported server event
+        $this->pageExported();
+
+        // Export header and footer
+        $doc->exportHeaderAndFooter();
+
+        // Clean output buffer (without destroying output buffer)
+        $buffer = ob_get_contents(); // Save the output buffer
+        if (!Config("DEBUG") && $buffer) {
+            ob_clean();
+        }
+
+        // Write debug message if enabled
+        if (Config("DEBUG") && !$this->isExport("pdf")) {
+            echo GetDebugMessage();
+        }
+
+        // Output data
+        if ($this->isExport("email")) {
+            // Export-to-email disabled
+        } else {
+            $doc->export();
+            if ($return) {
+                RemoveHeader("Content-Type"); // Remove header
+                RemoveHeader("Content-Disposition");
+                $content = ob_get_contents();
+                if ($content) {
+                    ob_clean();
+                }
+                if ($buffer) {
+                    echo $buffer; // Resume the output buffer
+                }
+                return $content;
+            }
         }
     }
 

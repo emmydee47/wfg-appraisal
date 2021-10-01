@@ -36,9 +36,9 @@ class MainPaEmployeeRatingsDelete extends MainPaEmployeeRatings
     public $RenderingView = false;
 
     // Audit Trail
-    public $AuditTrailOnAdd = false;
-    public $AuditTrailOnEdit = false;
-    public $AuditTrailOnDelete = false;
+    public $AuditTrailOnAdd = true;
+    public $AuditTrailOnEdit = true;
+    public $AuditTrailOnDelete = true;
     public $AuditTrailOnView = false;
     public $AuditTrailOnViewData = false;
     public $AuditTrailOnSearch = false;
@@ -413,7 +413,7 @@ class MainPaEmployeeRatingsDelete extends MainPaEmployeeRatings
         $this->createddate->setVisibility();
         $this->modifieddate->Visible = false;
         $this->isactive->Visible = false;
-        $this->group_id->setVisibility();
+        $this->group_id->Visible = false;
         $this->hideFieldsForAddEdit();
 
         // Do not use lookup cache
@@ -731,38 +731,10 @@ class MainPaEmployeeRatingsDelete extends MainPaEmployeeRatings
             }
             $this->appraisal_status->ViewCustomAttributes = "";
 
-            // createdby
-            $this->createdby->ViewValue = $this->createdby->CurrentValue;
-            $this->createdby->ViewValue = FormatNumber($this->createdby->ViewValue, "");
-            $this->createdby->ViewCustomAttributes = "";
-
-            // modifiedby
-            $this->modifiedby->ViewValue = $this->modifiedby->CurrentValue;
-            $this->modifiedby->ViewValue = FormatNumber($this->modifiedby->ViewValue, "");
-            $this->modifiedby->ViewCustomAttributes = "";
-
             // createddate
             $this->createddate->ViewValue = $this->createddate->CurrentValue;
             $this->createddate->ViewValue = FormatDateTime($this->createddate->ViewValue, 0);
             $this->createddate->ViewCustomAttributes = "";
-
-            // modifieddate
-            $this->modifieddate->ViewValue = $this->modifieddate->CurrentValue;
-            $this->modifieddate->ViewValue = FormatDateTime($this->modifieddate->ViewValue, 0);
-            $this->modifieddate->ViewCustomAttributes = "";
-
-            // isactive
-            if (ConvertToBool($this->isactive->CurrentValue)) {
-                $this->isactive->ViewValue = $this->isactive->tagCaption(1) != "" ? $this->isactive->tagCaption(1) : "Yes";
-            } else {
-                $this->isactive->ViewValue = $this->isactive->tagCaption(2) != "" ? $this->isactive->tagCaption(2) : "No";
-            }
-            $this->isactive->ViewCustomAttributes = "";
-
-            // group_id
-            $this->group_id->ViewValue = $this->group_id->CurrentValue;
-            $this->group_id->ViewValue = FormatNumber($this->group_id->ViewValue, "");
-            $this->group_id->ViewCustomAttributes = "";
 
             // id
             $this->id->LinkCustomAttributes = "";
@@ -793,11 +765,6 @@ class MainPaEmployeeRatingsDelete extends MainPaEmployeeRatings
             $this->createddate->LinkCustomAttributes = "";
             $this->createddate->HrefValue = "";
             $this->createddate->TooltipValue = "";
-
-            // group_id
-            $this->group_id->LinkCustomAttributes = "";
-            $this->group_id->HrefValue = "";
-            $this->group_id->TooltipValue = "";
         }
 
         // Call Row Rendered event
@@ -823,6 +790,9 @@ class MainPaEmployeeRatingsDelete extends MainPaEmployeeRatings
         }
         if ($this->UseTransaction) {
             $conn->beginTransaction();
+        }
+        if ($this->AuditTrailOnDelete) {
+            $this->writeAuditTrailDummy($Language->phrase("BatchDeleteBegin")); // Batch delete begin
         }
 
         // Clone old rows
@@ -880,9 +850,15 @@ class MainPaEmployeeRatingsDelete extends MainPaEmployeeRatings
             if (count($failKeys) > 0) {
                 $this->setWarningMessage(str_replace("%k", explode(", ", $failKeys), $Language->phrase("DeleteSomeRecordsFailed")));
             }
+            if ($this->AuditTrailOnDelete) {
+                $this->writeAuditTrailDummy($Language->phrase("BatchDeleteSuccess")); // Batch delete success
+            }
         } else {
             if ($this->UseTransaction) { // Rollback transaction
                 $conn->rollback();
+            }
+            if ($this->AuditTrailOnDelete) {
+                $this->writeAuditTrailDummy($Language->phrase("BatchDeleteRollback")); // Batch delete rollback
             }
         }
 

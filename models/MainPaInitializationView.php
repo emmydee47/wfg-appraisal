@@ -53,9 +53,9 @@ class MainPaInitializationView extends MainPaInitialization
     public $MultiUpdateUrl;
 
     // Audit Trail
-    public $AuditTrailOnAdd = false;
-    public $AuditTrailOnEdit = false;
-    public $AuditTrailOnDelete = false;
+    public $AuditTrailOnAdd = true;
+    public $AuditTrailOnEdit = true;
+    public $AuditTrailOnDelete = true;
     public $AuditTrailOnView = false;
     public $AuditTrailOnViewData = false;
     public $AuditTrailOnSearch = false;

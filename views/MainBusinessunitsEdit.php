@@ -160,7 +160,7 @@ loadjs.ready("fmain_businessunitsedit", function() {
         <div class="<?= $Page->RightColumnClass ?>"><div<?= $Page->isactive->cellAttributes() ?>>
 <span id="el_main_businessunits_isactive">
 <div class="form-check d-inline-block">
-    <input type="checkbox" class="form-check-input<?= $Page->isactive->isInvalidClass() ?>" data-table="main_businessunits" data-field="x_isactive" name="x_isactive[]" id="x_isactive_885242" value="1"<?= ConvertToBool($Page->isactive->CurrentValue) ? " checked" : "" ?><?= $Page->isactive->editAttributes() ?> aria-describedby="x_isactive_help">
+    <input type="checkbox" class="form-check-input<?= $Page->isactive->isInvalidClass() ?>" data-table="main_businessunits" data-field="x_isactive" name="x_isactive[]" id="x_isactive_544299" value="1"<?= ConvertToBool($Page->isactive->CurrentValue) ? " checked" : "" ?><?= $Page->isactive->editAttributes() ?> aria-describedby="x_isactive_help">
     <div class="invalid-feedback"><?= $Page->isactive->getErrorMessage() ?></div>
 </div>
 <?= $Page->isactive->getCustomMessage() ?>

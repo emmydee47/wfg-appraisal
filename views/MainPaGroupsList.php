@@ -49,7 +49,48 @@ loadjs.ready(["wrapper", "head"], function () {
     fmain_pa_groupssrch = new ew.Form("fmain_pa_groupssrch", "list");
     currentSearchForm = fmain_pa_groupssrch;
 
+    // Add fields
+    var fields = currentTable.fields;
+    fmain_pa_groupssrch.addFields([
+        ["id", [], fields.id.isInvalid],
+        ["business_unit", [], fields.business_unit.isInvalid],
+        ["group_name", [], fields.group_name.isInvalid],
+        ["createddate", [], fields.createddate.isInvalid],
+        ["modifieddate", [], fields.modifieddate.isInvalid]
+    ]);
+
+    // Validate form
+    fmain_pa_groupssrch.validate = function () {
+        if (!this.validateRequired)
+            return true; // Ignore validation
+        var fobj = this.getForm(),
+            $fobj = $(fobj),
+            rowIndex = "";
+        $fobj.data("rowindex", rowIndex);
+
+        // Validate fields
+        if (!this.validateFields(rowIndex))
+            return false;
+
+        // Call Form_CustomValidate event
+        if (!this.customValidate(fobj)) {
+            this.focus();
+            return false;
+        }
+        return true;
+    }
+
+    // Form_CustomValidate
+    fmain_pa_groupssrch.customValidate = function(fobj) { // DO NOT CHANGE THIS LINE!
+        // Your custom validation code here, return false if invalid.
+        return true;
+    }
+
+    // Use JavaScript validation or not
+    fmain_pa_groupssrch.validateRequired = ew.CLIENT_VALIDATE;
+
     // Dynamic selection lists
+    fmain_pa_groupssrch.lists.business_unit = <?= $Page->business_unit->toClientList($Page) ?>;
 
     // Filters
     fmain_pa_groupssrch.filterList = <?= $Page->getFilterList() ?>;
@@ -88,6 +129,84 @@ $Page->renderOtherOptions();
 <input type="hidden" name="cmd" value="search">
 <input type="hidden" name="t" value="main_pa_groups">
 <div class="ew-extended-search container-fluid">
+<div class="row mb-0<?= ($Page->SearchFieldsPerRow > 0) ? " row-cols-sm-" . $Page->SearchFieldsPerRow : "" ?>">
+<?php
+// Render search row
+$Page->RowType = ROWTYPE_SEARCH;
+$Page->resetAttributes();
+$Page->renderRow();
+?>
+<?php if ($Page->business_unit->Visible) { // business_unit ?>
+<?php
+if (!$Page->business_unit->UseFilter) {
+    $Page->SearchColumnCount++;
+}
+?>
+    <div id="xs_business_unit" class="col-sm-auto d-sm-flex mb-3 px-0 pe-sm-2<?= $Page->business_unit->UseFilter ? " ew-filter-field" : "" ?>">
+        <div class="d-flex my-1 my-sm-0">
+            <label for="x_business_unit" class="ew-search-caption ew-label"><?= $Page->business_unit->caption() ?></label>
+            <div class="ew-search-operator">
+<?= $Language->phrase("=") ?>
+<input type="hidden" name="z_business_unit" id="z_business_unit" value="=">
+</div>
+        </div>
+        <div id="el_main_pa_groups_business_unit" class="ew-search-field">
+    <select
+        id="x_business_unit"
+        name="x_business_unit"
+        class="form-control ew-select<?= $Page->business_unit->isInvalidClass() ?>"
+        data-select2-id="fmain_pa_groupssrch_x_business_unit"
+        data-table="main_pa_groups"
+        data-field="x_business_unit"
+        data-caption="<?= HtmlEncode(RemoveHtml($Page->business_unit->caption())) ?>"
+        data-modal-lookup="true"
+        data-value-separator="<?= $Page->business_unit->displayValueSeparatorAttribute() ?>"
+        data-placeholder="<?= HtmlEncode($Page->business_unit->getPlaceHolder()) ?>"
+        <?= $Page->business_unit->editAttributes() ?>>
+        <?= $Page->business_unit->selectOptionListHtml("x_business_unit") ?>
+    </select>
+    <div class="invalid-feedback"><?= $Page->business_unit->getErrorMessage(false) ?></div>
+<?= $Page->business_unit->Lookup->getParamTag($Page, "p_x_business_unit") ?>
+<script>
+loadjs.ready("fmain_pa_groupssrch", function() {
+    var options = { name: "x_business_unit", selectId: "fmain_pa_groupssrch_x_business_unit" };
+    if (fmain_pa_groupssrch.lists.business_unit.lookupOptions.length) {
+        options.data = { id: "x_business_unit", form: "fmain_pa_groupssrch" };
+    } else {
+        options.ajax = { id: "x_business_unit", form: "fmain_pa_groupssrch", limit: ew.LOOKUP_PAGE_SIZE };
+    }
+    options = Object.assign({}, ew.modalLookupOptions, options, ew.vars.tables.main_pa_groups.fields.business_unit.modalLookupOptions);
+    ew.createModalLookup(options);
+});
+</script>
+</div>
+        <div class="d-flex my-1 my-sm-0">
+        </div><!-- /.ew-search-field -->
+    </div><!-- /.col-sm-auto -->
+<?php } ?>
+<?php if ($Page->group_name->Visible) { // group_name ?>
+<?php
+if (!$Page->group_name->UseFilter) {
+    $Page->SearchColumnCount++;
+}
+?>
+    <div id="xs_group_name" class="col-sm-auto d-sm-flex mb-3 px-0 pe-sm-2<?= $Page->group_name->UseFilter ? " ew-filter-field" : "" ?>">
+        <div class="d-flex my-1 my-sm-0">
+            <label for="x_group_name" class="ew-search-caption ew-label"><?= $Page->group_name->caption() ?></label>
+            <div class="ew-search-operator">
+<?= $Language->phrase("LIKE") ?>
+<input type="hidden" name="z_group_name" id="z_group_name" value="LIKE">
+</div>
+        </div>
+        <div id="el_main_pa_groups_group_name" class="ew-search-field">
+<input type="<?= $Page->group_name->getInputTextType() ?>" name="x_group_name" id="x_group_name" data-table="main_pa_groups" data-field="x_group_name" value="<?= $Page->group_name->EditValue ?>" size="30" maxlength="250" placeholder="<?= HtmlEncode($Page->group_name->getPlaceHolder()) ?>"<?= $Page->group_name->editAttributes() ?>>
+<div class="invalid-feedback"><?= $Page->group_name->getErrorMessage(false) ?></div>
+</div>
+        <div class="d-flex my-1 my-sm-0">
+        </div><!-- /.ew-search-field -->
+    </div><!-- /.col-sm-auto -->
+<?php } ?>
+</div><!-- /.row -->
 <div class="row mb-0">
     <div class="col-sm-auto px-0 pe-sm-2">
         <div class="ew-basic-search input-group">
