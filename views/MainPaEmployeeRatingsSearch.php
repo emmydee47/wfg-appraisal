@@ -402,7 +402,7 @@ loadjs.ready(["fmain_pa_employee_ratingssearch", "datetimepicker"], function () 
             <div<?= $Page->isactive->cellAttributes() ?>>
             <span id="el_main_pa_employee_ratings_isactive" class="ew-search-field ew-search-field-single">
 <div class="form-check d-inline-block">
-    <input type="checkbox" class="form-check-input<?= $Page->isactive->isInvalidClass() ?>" data-table="main_pa_employee_ratings" data-field="x_isactive" name="x_isactive[]" id="x_isactive_370260" value="1"<?= ConvertToBool($Page->isactive->AdvancedSearch->SearchValue) ? " checked" : "" ?><?= $Page->isactive->editAttributes() ?>>
+    <input type="checkbox" class="form-check-input<?= $Page->isactive->isInvalidClass() ?>" data-table="main_pa_employee_ratings" data-field="x_isactive" name="x_isactive[]" id="x_isactive_819709" value="1"<?= ConvertToBool($Page->isactive->AdvancedSearch->SearchValue) ? " checked" : "" ?><?= $Page->isactive->editAttributes() ?>>
     <div class="invalid-feedback"><?= $Page->isactive->getErrorMessage(false) ?></div>
 </div>
 </span>
