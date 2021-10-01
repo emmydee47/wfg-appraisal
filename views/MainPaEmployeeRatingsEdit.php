@@ -206,7 +206,7 @@ loadjs.ready("fmain_pa_employee_ratingsedit", function() {
         <div class="<?= $Page->RightColumnClass ?>"><div<?= $Page->isactive->cellAttributes() ?>>
 <span id="el_main_pa_employee_ratings_isactive">
 <div class="form-check d-inline-block">
-    <input type="checkbox" class="form-check-input<?= $Page->isactive->isInvalidClass() ?>" data-table="main_pa_employee_ratings" data-field="x_isactive" name="x_isactive[]" id="x_isactive_686750" value="1"<?= ConvertToBool($Page->isactive->CurrentValue) ? " checked" : "" ?><?= $Page->isactive->editAttributes() ?> aria-describedby="x_isactive_help">
+    <input type="checkbox" class="form-check-input<?= $Page->isactive->isInvalidClass() ?>" data-table="main_pa_employee_ratings" data-field="x_isactive" name="x_isactive[]" id="x_isactive_762667" value="1"<?= ConvertToBool($Page->isactive->CurrentValue) ? " checked" : "" ?><?= $Page->isactive->editAttributes() ?> aria-describedby="x_isactive_help">
     <div class="invalid-feedback"><?= $Page->isactive->getErrorMessage() ?></div>
 </div>
 <?= $Page->isactive->getCustomMessage() ?>

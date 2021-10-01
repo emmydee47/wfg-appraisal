@@ -89,7 +89,7 @@ function  searchArrayOfObjects($arrayOfObjects, $searchedValue){
    $count = 0;
 $ratings_content = '<div class="flex-container">';
  foreach($appraisal_ratings as $appraisal_rating){ 
- 	$ratings_content.='<div><span><input  type="radio" name="rating" id="rating'.$appraisal_rating['rating_value'].'" value="'.$appraisal_rating['rating_value'].'" class="form-control rd-rating" style="display:inline; margin-right:10px; float:left;" data-toggle="tooltip" data-placement="bottom" title="'.$appraisal_rating['rating_description'].'" /></span><span class="badge" style="margin-top:12px;">'.$appraisal_rating['rating_value'].'</span><br /><br />'.$appraisal_rating['rating_text'].'</div>';
+ 	$ratings_content.='<div><span><input  type="radio" name="rating" id="rating'.$appraisal_rating['rating_value'].'" value="'.$appraisal_rating['rating_value'].'" class=" rd-rating" style="display:inline; margin-right:10px; float:left;" data-toggle="tooltip" data-placement="bottom" title="'.$appraisal_rating['rating_description'].'" /></span><span class="badge" style="margin-top:12px;">'.$appraisal_rating['rating_value'].'</span><br /><br />'.$appraisal_rating['rating_text'].'</div>';
  }
  $ratings_content .= '</div>';
 foreach($appraisal_questions as $questions)
@@ -143,6 +143,7 @@ let rating_response = [];
  let qst = 0;
 const emp_id = "<?php echo $payload->employee_id; ?>";
 const appraisal_id = "<?php echo $payload->appraisal_id; ?>";
+const current_user_id = "<?php echo CurrentUserID(); ?>";
 let domain = document.location.origin;
 
 if(domain==='http://localhost')
@@ -182,12 +183,12 @@ if(domain==='http://localhost')
   	  		submitManagerAppraisal(employee_appraisal);
   	  	
   });
- function submitManagerAppraisal(data){
+ function submitManagerAppraisal(sdata){
 	 
  	 $.ajax({
             url:  domain+"/api/postLineManagerTwoResponse",
             type: "POST",
-             data:{"action":"post_appraisal", "appraisal_data": data},
+             data:{"action":"post_appraisal", "appraisal_data": sdata, "current_user_id":current_user_id},
             success: function(data, status, xhr) {
             console.log(data);
                 var out = (data && typeof data === 'object') ? JSON.stringify(data) : data;

@@ -130,15 +130,19 @@ function Api_Action($app)
     });
  $app->post('/postLineManagerOneResponse', function ($request, $response, $args) {
         $data= $_REQUEST['appraisal_data'];
-        $resp = submitLineManagerOneAppraisalResponse($data['emp_id'],$data['appraisal_id'],json_encode($data['response']));
+        $current_user_id = $_REQUEST['current_user_id'];
+        $resp = submitLineManagerOneAppraisalResponse($current_user_id, $data['emp_id'],$data['appraisal_id'],json_encode($data['response']));
+        debugCode($resp);
         return $response->withJson(["message" => $resp]);  // Return Psr\Http\Message\ResponseInterface object 
     });
    $app->post('/postLineManagerTwoResponse', function ($request, $response, $args) {
         $data= $_REQUEST['appraisal_data'];
-        $resp = submitLineManagerTwoAppraisalResponse($data['emp_id'],$data['appraisal_id'],json_encode($data['response']));
+        $current_user_id = $_REQUEST['current_user_id'];
+        $resp = submitLineManagerTwoAppraisalResponse($current_user_id, $data['emp_id'],$data['appraisal_id'],json_encode($data['response']));
         return $response->withJson(["message" => $resp]);  // Return Psr\Http\Message\ResponseInterface object 
     });
    $app->post('/sendToLineManager', function ($request, $response, $args) {
+        $current_user_id= $_REQUEST['current_user_id'];
         $appraisal_id= $_REQUEST['appraisal_id'];
         $user_id= $_REQUEST['user_id'];
         $level= $_REQUEST['level'];
@@ -263,14 +267,14 @@ consolidated_rating=".$consolidated_score." WHERE appraisal_id=".$appraisal_id."
 return $myResult;
 }
 
-function submitLineManagerOneAppraisalResponse($userId, $appraisal_id, $response){
-$myResult = ExecuteUpdate("UPDATE main_pa_score SET line_manager_one=".CurrentUserId().", line_manager_one_response='".addSlashes(htmlspecialchars_decode($response))."' WHERE employee=".$userId." AND appraisal=".$appraisal_id);
+function submitLineManagerOneAppraisalResponse($current_user_id, $userId, $appraisal_id, $response){
+$myResult = ExecuteUpdate("UPDATE main_pa_score SET line_manager_one=".$current_user_id.", line_manager_one_response='".addSlashes(htmlspecialchars_decode($response))."' WHERE employee=".$userId." AND appraisal=".$appraisal_id);
 updateEmployeeRating($userId,$appraisal_id, $response, 1);
 return $myResult;
 }
 
-function submitLineManagerTwoAppraisalResponse($userId, $appraisal_id, $response){
-$myResult = ExecuteUpdate("UPDATE main_pa_score SET line_manager_two=".CurrentUserId().", line_manager_two_response='".addSlashes(htmlspecialchars_decode($response))."' WHERE employee=".$userId." AND appraisal=".$appraisal_id);
+function submitLineManagerTwoAppraisalResponse($current_user_id, $userId, $appraisal_id, $response){
+$myResult = ExecuteUpdate("UPDATE main_pa_score SET line_manager_two=".$current_user_id.", line_manager_two_response='".addSlashes(htmlspecialchars_decode($response))."' WHERE employee=".$userId." AND appraisal=".$appraisal_id);
 return $myResult;
 }
 

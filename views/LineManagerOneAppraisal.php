@@ -95,6 +95,7 @@ if(isset($_REQUEST['t'])){
 
 <input type="hidden" name="appraisal_id" id="appraisal_id" value="<?php echo $appraisal_details['id']; ?>" />
 <input type="hidden" name="user_id" id="user_id" value="<?php echo $employee_id; ?>" />
+
 <div class="panel panel-default" id="ap-div">
   <div class="panel-heading">
   <?php echo $appraisal_details['unitname'].", ".$appraisal_details['group_name']." - ".$appraisal_details['appraisal_mode']." (".$appraisal_details['appraisal_period'].") ".$appraisal_details['from_year']." ".$employee_details['firstname']." ".$employee_details['lastname'];   ?>
@@ -116,7 +117,7 @@ if(isset($_REQUEST['t'])){
       $ratings_content = '<div class="flex-container">';
 
     foreach($appraisal_ratings as $appraisal_rating){ 
-      $ratings_content.='<div><span><input data-qst="'.$questions['id'].'" type="radio" name="rdb'.$count.'" id="rating'.$count.$appraisal_rating['rating_value'].'" value="'.$appraisal_rating['rating_value'].'" class="form-control rd-rating'.$count.'" style="display:inline; margin-right:10px; float:left;" data-toggle="tooltip" data-placement="bottom" title="'.$appraisal_rating['rating_description'].'" /></span><span class="badge" style="margin-top:12px;">'.$appraisal_rating['rating_value'].'</span><br /><br />'.$appraisal_rating['rating_text'].'</div>';
+      $ratings_content.='<div><span><input data-qst="'.$questions['id'].'" type="radio" name="rdb'.$count.'" id="rating'.$count.$appraisal_rating['rating_value'].'" value="'.$appraisal_rating['rating_value'].'" class="rd-rating'.$count.'" style="display:inline; margin-right:10px; float:left;" data-toggle="tooltip" data-placement="bottom" title="'.$appraisal_rating['rating_description'].'" /></span><span class="badge" style="margin-top:12px;">'.$appraisal_rating['rating_value'].'</span><br /><br />'.$appraisal_rating['rating_text'].'</div>';
     }
 
   $ratings_content .= '</div>';
@@ -164,6 +165,7 @@ let rating_response = [];
  let qst = 0;
 const emp_id = "<?php echo $employee_id; ?>";
 const appraisal_id = "<?php echo $appraisal_id; ?>";
+const current_user_id = "<?php echo CurrentUserID(); ?>";
 
 let domain = document.location.origin;
 
@@ -186,7 +188,7 @@ if(domain==='http://localhost')
   	  		});
   	  		if(rating===0){
   	  		alert("please fill all fields");
-  	  		return false;
+  	  		return;
   	  		}
   	  		explanation = $(this).find('.txt-explanation').val();
 
@@ -200,26 +202,32 @@ if(domain==='http://localhost')
 
   	  		$('.txt-explanation').each(function(){
   	  			explanation = $(this).val();
+                if(explanation.length==0)
+                {
+                    alert("please fill all fields");
+                    return false;
+                }
   	  		});
-  	  		if(explanation.length==0)
-  	  		{
-  	  			alert("please fill all fields");
-  	  			return false;
-  	  		}
+
+          if(explanation.length==0)
+          {
+            return false;
+          }
+  	  		
   	  		employee_appraisal.response = qst_response;
   	  		submitManagerAppraisal(employee_appraisal);
   	  	
   });
- function submitManagerAppraisal(data){
-	  const appraisal_data = data;
+ function submitManagerAppraisal(sdata){
+	  const appraisal_data = sdata;
  	 $.ajax({
             url: domain+"/api/postLineManagerOneResponse",
             type: "POST",
-             data:{"action":"post_appraisal", "appraisal_data": data},
+             data:{"action":"post_appraisal", "appraisal_data": sdata, "current_user_id":current_user_id},
             success: function(data, status, xhr) {
-            console.log(data);
                 var out = (data && typeof data === 'object') ? JSON.stringify(data) : data;
                 var resp = $.parseJSON(out);
+               
                 if(resp.message===1){
                   sendToLineManager(appraisal_data['appraisal_id'], appraisal_data['emp_id'], 2);
                 //	alert("Appraisal submitted successfuly");
@@ -228,6 +236,7 @@ if(domain==='http://localhost')
                 }
             },
             error: function (xhr, ajaxOptions, thrownError) {
+                console.log(xhr);
                 alert("status: " + xhr.status + ", error: " + thrownError);
             },
             beforeSend: function(request) { // Set JWT header
@@ -237,28 +246,6 @@ if(domain==='http://localhost')
 
  }
 
- function sendToLineManager(appraisalId, userId, level){
 
-      $.ajax({
-            url:  domain+"/api/sendToLineManager",
-            type: "POST",
-            data:{"appraisal_id":appraisalId, "user_id": userId, "level":level},
-            success: function(data, status, xhr) {
-                var out = (data && typeof data === 'object') ? JSON.stringify(data) : data;
-                var resp = $.parseJSON(out);
-                if(resp.message==1){
-                   
-                }
-                
-            },
-            error: function (xhr, ajaxOptions, thrownError) {
-               console.log("status: " + xhr.status + ", error: " + thrownError);
-            },
-            beforeSend: function(request) { // Set JWT header
-               // request.setRequestHeader('X-Authorization', 'Bearer ' + store.JWT);
-             } 
-        });
- }
 </script>
-
 <?= GetDebugMessage() ?>
