@@ -36,9 +36,9 @@ class MainPaEmployeeRatingsSearch extends MainPaEmployeeRatings
     public $RenderingView = false;
 
     // Audit Trail
-    public $AuditTrailOnAdd = false;
-    public $AuditTrailOnEdit = false;
-    public $AuditTrailOnDelete = false;
+    public $AuditTrailOnAdd = true;
+    public $AuditTrailOnEdit = true;
+    public $AuditTrailOnDelete = true;
     public $AuditTrailOnView = false;
     public $AuditTrailOnViewData = false;
     public $AuditTrailOnSearch = false;
@@ -767,10 +767,6 @@ class MainPaEmployeeRatingsSearch extends MainPaEmployeeRatings
 
         // View row
         if ($this->RowType == ROWTYPE_VIEW) {
-            // id
-            $this->id->ViewValue = $this->id->CurrentValue;
-            $this->id->ViewCustomAttributes = "";
-
             // appraisal_id
             $curVal = strval($this->appraisal_id->CurrentValue);
             if ($curVal != "") {
@@ -831,16 +827,6 @@ class MainPaEmployeeRatingsSearch extends MainPaEmployeeRatings
                 $this->appraisal_status->ViewValue = null;
             }
             $this->appraisal_status->ViewCustomAttributes = "";
-
-            // createdby
-            $this->createdby->ViewValue = $this->createdby->CurrentValue;
-            $this->createdby->ViewValue = FormatNumber($this->createdby->ViewValue, "");
-            $this->createdby->ViewCustomAttributes = "";
-
-            // modifiedby
-            $this->modifiedby->ViewValue = $this->modifiedby->CurrentValue;
-            $this->modifiedby->ViewValue = FormatNumber($this->modifiedby->ViewValue, "");
-            $this->modifiedby->ViewCustomAttributes = "";
 
             // createddate
             $this->createddate->ViewValue = $this->createddate->CurrentValue;

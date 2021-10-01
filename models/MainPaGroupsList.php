@@ -59,9 +59,9 @@ class MainPaGroupsList extends MainPaGroups
     public $MultiUpdateUrl;
 
     // Audit Trail
-    public $AuditTrailOnAdd = false;
-    public $AuditTrailOnEdit = false;
-    public $AuditTrailOnDelete = false;
+    public $AuditTrailOnAdd = true;
+    public $AuditTrailOnEdit = true;
+    public $AuditTrailOnDelete = true;
     public $AuditTrailOnView = false;
     public $AuditTrailOnViewData = false;
     public $AuditTrailOnSearch = false;
@@ -601,6 +601,31 @@ class MainPaGroupsList extends MainPaGroups
 
         // Create form object
         $CurrentForm = new HttpForm();
+
+        // Get export parameters
+        $custom = "";
+        if (Param("export") !== null) {
+            $this->Export = Param("export");
+            $custom = Param("custom", "");
+        } elseif (IsPost()) {
+            if (Post("exporttype") !== null) {
+                $this->Export = Post("exporttype");
+            }
+            $custom = Post("custom", "");
+        } elseif (Get("cmd") == "json") {
+            $this->Export = Get("cmd");
+        } else {
+            $this->setExportReturnUrl(CurrentUrl());
+        }
+        $ExportFileName = $this->TableVar; // Get export file, used in header
+
+        // Get custom export parameters
+        if ($this->isExport() && $custom != "") {
+            $this->CustomExport = $this->Export;
+            $this->Export = "print";
+        }
+        $CustomExportType = $this->CustomExport;
+        $ExportType = $this->Export; // Get export parameter, used in header
         $this->CurrentAction = Param("action"); // Set up current action
 
         // Get grid add count
@@ -611,6 +636,9 @@ class MainPaGroupsList extends MainPaGroups
 
         // Set up list options
         $this->setupListOptions();
+
+        // Setup export options
+        $this->setupExportOptions();
         $this->id->setVisibility();
         $this->business_unit->setVisibility();
         $this->group_name->setVisibility();
@@ -751,14 +779,23 @@ class MainPaGroupsList extends MainPaGroups
 
             // Get default search criteria
             AddFilter($this->DefaultSearchWhere, $this->basicSearchWhere(true));
+            AddFilter($this->DefaultSearchWhere, $this->advancedSearchWhere(true));
 
             // Get basic search values
             $this->loadBasicSearchValues();
+
+            // Get and validate search values for advanced search
+            if (EmptyValue($this->UserAction)) { // Skip if user action
+                $this->loadSearchValues();
+            }
 
             // Process filter list
             if ($this->processFilterList()) {
                 $this->terminate();
                 return;
+            }
+            if (!$this->validateSearch()) {
+                // Nothing to do
             }
 
             // Restore search parms from Session if not searching / reset / export
@@ -775,6 +812,11 @@ class MainPaGroupsList extends MainPaGroups
             // Get basic search criteria
             if (!$this->hasInvalidFields()) {
                 $srchBasic = $this->basicSearchWhere();
+            }
+
+            // Get search criteria for advanced search
+            if (!$this->hasInvalidFields()) {
+                $srchAdvanced = $this->advancedSearchWhere();
             }
         }
 
@@ -798,6 +840,16 @@ class MainPaGroupsList extends MainPaGroups
             if ($this->BasicSearch->Keyword != "") {
                 $srchBasic = $this->basicSearchWhere();
             }
+
+            // Load advanced search from default
+            if ($this->loadAdvancedSearchDefault()) {
+                $srchAdvanced = $this->advancedSearchWhere();
+            }
+        }
+
+        // Restore search settings from Session
+        if (!$this->hasInvalidFields()) {
+            $this->loadAdvancedSearch();
         }
 
         // Build search criteria
@@ -831,6 +883,13 @@ class MainPaGroupsList extends MainPaGroups
         } else {
             $this->setSessionWhere($filter);
             $this->CurrentFilter = "";
+        }
+
+        // Export data only
+        if (!$this->CustomExport && in_array($this->Export, array_keys(Config("EXPORT_CLASSES")))) {
+            $this->exportData();
+            $this->terminate();
+            return;
         }
         if ($this->isGridAdd()) {
             $this->CurrentFilter = "0=1";
@@ -1383,6 +1442,101 @@ class MainPaGroupsList extends MainPaGroups
         $this->BasicSearch->setType(@$filter[Config("TABLE_BASIC_SEARCH_TYPE")]);
     }
 
+    // Advanced search WHERE clause based on QueryString
+    protected function advancedSearchWhere($default = false)
+    {
+        global $Security;
+        $where = "";
+        if (!$Security->canSearch()) {
+            return "";
+        }
+        $this->buildSearchSql($where, $this->id, $default, false); // id
+        $this->buildSearchSql($where, $this->business_unit, $default, false); // business_unit
+        $this->buildSearchSql($where, $this->group_name, $default, false); // group_name
+        $this->buildSearchSql($where, $this->createdby, $default, false); // createdby
+        $this->buildSearchSql($where, $this->modifiedby, $default, false); // modifiedby
+        $this->buildSearchSql($where, $this->createddate, $default, false); // createddate
+        $this->buildSearchSql($where, $this->modifieddate, $default, false); // modifieddate
+
+        // Set up search parm
+        if (!$default && $where != "" && in_array($this->Command, ["", "reset", "resetall"])) {
+            $this->Command = "search";
+        }
+        if (!$default && $this->Command == "search") {
+            $this->id->AdvancedSearch->save(); // id
+            $this->business_unit->AdvancedSearch->save(); // business_unit
+            $this->group_name->AdvancedSearch->save(); // group_name
+            $this->createdby->AdvancedSearch->save(); // createdby
+            $this->modifiedby->AdvancedSearch->save(); // modifiedby
+            $this->createddate->AdvancedSearch->save(); // createddate
+            $this->modifieddate->AdvancedSearch->save(); // modifieddate
+        }
+        return $where;
+    }
+
+    // Build search SQL
+    protected function buildSearchSql(&$where, &$fld, $default, $multiValue)
+    {
+        $fldParm = $fld->Param;
+        $fldVal = $default ? $fld->AdvancedSearch->SearchValueDefault : $fld->AdvancedSearch->SearchValue;
+        $fldOpr = $default ? $fld->AdvancedSearch->SearchOperatorDefault : $fld->AdvancedSearch->SearchOperator;
+        $fldCond = $default ? $fld->AdvancedSearch->SearchConditionDefault : $fld->AdvancedSearch->SearchCondition;
+        $fldVal2 = $default ? $fld->AdvancedSearch->SearchValue2Default : $fld->AdvancedSearch->SearchValue2;
+        $fldOpr2 = $default ? $fld->AdvancedSearch->SearchOperator2Default : $fld->AdvancedSearch->SearchOperator2;
+        $wrk = "";
+        if (is_array($fldVal)) {
+            $fldVal = implode(Config("MULTIPLE_OPTION_SEPARATOR"), $fldVal);
+        }
+        if (is_array($fldVal2)) {
+            $fldVal2 = implode(Config("MULTIPLE_OPTION_SEPARATOR"), $fldVal2);
+        }
+        $fldOpr = strtoupper(trim($fldOpr));
+        if ($fldOpr == "") {
+            $fldOpr = "=";
+        }
+        $fldOpr2 = strtoupper(trim($fldOpr2));
+        if ($fldOpr2 == "") {
+            $fldOpr2 = "=";
+        }
+        if (Config("SEARCH_MULTI_VALUE_OPTION") == 1 && !$fld->UseFilter || !IsMultiSearchOperator($fldOpr)) {
+            $multiValue = false;
+        }
+        if ($multiValue) {
+            $wrk = $fldVal != "" ? GetMultiSearchSql($fld, $fldOpr, $fldVal, $this->Dbid) : ""; // Field value 1
+            $wrk2 = $fldVal2 != "" ? GetMultiSearchSql($fld, $fldOpr2, $fldVal2, $this->Dbid) : ""; // Field value 2
+            AddFilter($wrk, $wrk2, $fldCond);
+        } else {
+            $fldVal = $this->convertSearchValue($fld, $fldVal);
+            $fldVal2 = $this->convertSearchValue($fld, $fldVal2);
+            $wrk = GetSearchSql($fld, $fldVal, $fldOpr, $fldCond, $fldVal2, $fldOpr2, $this->Dbid);
+        }
+        if ($this->SearchOption == "AUTO" && in_array($this->BasicSearch->getType(), ["AND", "OR"])) {
+            $cond = $this->BasicSearch->getType();
+        } else {
+            $cond = SameText($this->SearchOption, "OR") ? "OR" : "AND";
+        }
+        AddFilter($where, $wrk, $cond);
+    }
+
+    // Convert search value
+    protected function convertSearchValue(&$fld, $fldVal)
+    {
+        if ($fldVal == Config("NULL_VALUE") || $fldVal == Config("NOT_NULL_VALUE")) {
+            return $fldVal;
+        }
+        $value = $fldVal;
+        if ($fld->isBoolean()) {
+            if ($fldVal != "") {
+                $value = (SameText($fldVal, "1") || SameText($fldVal, "y") || SameText($fldVal, "t")) ? $fld->TrueValue : $fld->FalseValue;
+            }
+        } elseif ($fld->DataType == DATATYPE_DATE || $fld->DataType == DATATYPE_TIME) {
+            if ($fldVal != "") {
+                $value = UnFormatDateTime($fldVal, $fld->formatPattern());
+            }
+        }
+        return $value;
+    }
+
     // Return basic search WHERE clause based on search keyword and type
     protected function basicSearchWhere($default = false)
     {
@@ -1394,6 +1548,7 @@ class MainPaGroupsList extends MainPaGroups
 
         // Fields to search
         $searchFlds = [];
+        $searchFlds[] = &$this->business_unit;
         $searchFlds[] = &$this->group_name;
         $searchKeyword = $default ? $this->BasicSearch->KeywordDefault : $this->BasicSearch->Keyword;
         $searchType = $default ? $this->BasicSearch->TypeDefault : $this->BasicSearch->Type;
@@ -1420,6 +1575,27 @@ class MainPaGroupsList extends MainPaGroups
         if ($this->BasicSearch->issetSession()) {
             return true;
         }
+        if ($this->id->AdvancedSearch->issetSession()) {
+            return true;
+        }
+        if ($this->business_unit->AdvancedSearch->issetSession()) {
+            return true;
+        }
+        if ($this->group_name->AdvancedSearch->issetSession()) {
+            return true;
+        }
+        if ($this->createdby->AdvancedSearch->issetSession()) {
+            return true;
+        }
+        if ($this->modifiedby->AdvancedSearch->issetSession()) {
+            return true;
+        }
+        if ($this->createddate->AdvancedSearch->issetSession()) {
+            return true;
+        }
+        if ($this->modifieddate->AdvancedSearch->issetSession()) {
+            return true;
+        }
         return false;
     }
 
@@ -1432,6 +1608,9 @@ class MainPaGroupsList extends MainPaGroups
 
         // Clear basic search parameters
         $this->resetBasicSearchParms();
+
+        // Clear advanced search parameters
+        $this->resetAdvancedSearchParms();
     }
 
     // Load advanced search default values
@@ -1446,6 +1625,18 @@ class MainPaGroupsList extends MainPaGroups
         $this->BasicSearch->unsetSession();
     }
 
+    // Clear all advanced search parameters
+    protected function resetAdvancedSearchParms()
+    {
+        $this->id->AdvancedSearch->unsetSession();
+        $this->business_unit->AdvancedSearch->unsetSession();
+        $this->group_name->AdvancedSearch->unsetSession();
+        $this->createdby->AdvancedSearch->unsetSession();
+        $this->modifiedby->AdvancedSearch->unsetSession();
+        $this->createddate->AdvancedSearch->unsetSession();
+        $this->modifieddate->AdvancedSearch->unsetSession();
+    }
+
     // Restore all search parameters
     protected function restoreSearchParms()
     {
@@ -1453,6 +1644,15 @@ class MainPaGroupsList extends MainPaGroups
 
         // Restore basic search values
         $this->BasicSearch->load();
+
+        // Restore advanced search values
+        $this->id->AdvancedSearch->load();
+        $this->business_unit->AdvancedSearch->load();
+        $this->group_name->AdvancedSearch->load();
+        $this->createdby->AdvancedSearch->load();
+        $this->modifiedby->AdvancedSearch->load();
+        $this->createddate->AdvancedSearch->load();
+        $this->modifieddate->AdvancedSearch->load();
     }
 
     // Set up sort parameters
@@ -2123,6 +2323,70 @@ class MainPaGroupsList extends MainPaGroups
         $this->BasicSearch->setType(Get(Config("TABLE_BASIC_SEARCH_TYPE"), ""), false);
     }
 
+    // Load search values for validation
+    protected function loadSearchValues()
+    {
+        // Load search values
+        $hasValue = false;
+
+        // id
+        if ($this->id->AdvancedSearch->get()) {
+            $hasValue = true;
+            if (($this->id->AdvancedSearch->SearchValue != "" || $this->id->AdvancedSearch->SearchValue2 != "") && $this->Command == "") {
+                $this->Command = "search";
+            }
+        }
+
+        // business_unit
+        if ($this->business_unit->AdvancedSearch->get()) {
+            $hasValue = true;
+            if (($this->business_unit->AdvancedSearch->SearchValue != "" || $this->business_unit->AdvancedSearch->SearchValue2 != "") && $this->Command == "") {
+                $this->Command = "search";
+            }
+        }
+
+        // group_name
+        if ($this->group_name->AdvancedSearch->get()) {
+            $hasValue = true;
+            if (($this->group_name->AdvancedSearch->SearchValue != "" || $this->group_name->AdvancedSearch->SearchValue2 != "") && $this->Command == "") {
+                $this->Command = "search";
+            }
+        }
+
+        // createdby
+        if ($this->createdby->AdvancedSearch->get()) {
+            $hasValue = true;
+            if (($this->createdby->AdvancedSearch->SearchValue != "" || $this->createdby->AdvancedSearch->SearchValue2 != "") && $this->Command == "") {
+                $this->Command = "search";
+            }
+        }
+
+        // modifiedby
+        if ($this->modifiedby->AdvancedSearch->get()) {
+            $hasValue = true;
+            if (($this->modifiedby->AdvancedSearch->SearchValue != "" || $this->modifiedby->AdvancedSearch->SearchValue2 != "") && $this->Command == "") {
+                $this->Command = "search";
+            }
+        }
+
+        // createddate
+        if ($this->createddate->AdvancedSearch->get()) {
+            $hasValue = true;
+            if (($this->createddate->AdvancedSearch->SearchValue != "" || $this->createddate->AdvancedSearch->SearchValue2 != "") && $this->Command == "") {
+                $this->Command = "search";
+            }
+        }
+
+        // modifieddate
+        if ($this->modifieddate->AdvancedSearch->get()) {
+            $hasValue = true;
+            if (($this->modifieddate->AdvancedSearch->SearchValue != "" || $this->modifieddate->AdvancedSearch->SearchValue2 != "") && $this->Command == "") {
+                $this->Command = "search";
+            }
+        }
+        return $hasValue;
+    }
+
     // Load form values
     protected function loadFormValues()
     {
@@ -2620,6 +2884,69 @@ class MainPaGroupsList extends MainPaGroups
             // modifieddate
             $this->modifieddate->LinkCustomAttributes = "";
             $this->modifieddate->HrefValue = "";
+        } elseif ($this->RowType == ROWTYPE_SEARCH) {
+            // id
+            $this->id->setupEditAttributes();
+            $this->id->EditCustomAttributes = "";
+            $this->id->EditValue = HtmlEncode($this->id->AdvancedSearch->SearchValue);
+            $this->id->PlaceHolder = RemoveHtml($this->id->caption());
+
+            // business_unit
+            $this->business_unit->EditCustomAttributes = "";
+            $curVal = trim(strval($this->business_unit->AdvancedSearch->SearchValue));
+            if ($curVal != "") {
+                $this->business_unit->AdvancedSearch->ViewValue = $this->business_unit->lookupCacheOption($curVal);
+            } else {
+                $this->business_unit->AdvancedSearch->ViewValue = $this->business_unit->Lookup !== null && is_array($this->business_unit->lookupOptions()) ? $curVal : null;
+            }
+            if ($this->business_unit->AdvancedSearch->ViewValue !== null) { // Load from cache
+                $this->business_unit->EditValue = array_values($this->business_unit->lookupOptions());
+                if ($this->business_unit->AdvancedSearch->ViewValue == "") {
+                    $this->business_unit->AdvancedSearch->ViewValue = $Language->phrase("PleaseSelect");
+                }
+            } else { // Lookup from database
+                if ($curVal == "") {
+                    $filterWrk = "0=1";
+                } else {
+                    $filterWrk = "`id`" . SearchString("=", $this->business_unit->AdvancedSearch->SearchValue, DATATYPE_NUMBER, "");
+                }
+                $sqlWrk = $this->business_unit->Lookup->getSql(true, $filterWrk, '', $this, false, true);
+                $conn = Conn();
+                $config = $conn->getConfiguration();
+                $config->setResultCacheImpl($this->Cache);
+                $rswrk = $conn->executeCacheQuery($sqlWrk, [], [], $this->CacheProfile)->fetchAll();
+                $ari = count($rswrk);
+                if ($ari > 0) { // Lookup values found
+                    $arwrk = $this->business_unit->Lookup->renderViewRow($rswrk[0]);
+                    $this->business_unit->AdvancedSearch->ViewValue = $this->business_unit->displayValue($arwrk);
+                } else {
+                    $this->business_unit->AdvancedSearch->ViewValue = $Language->phrase("PleaseSelect");
+                }
+                $arwrk = $rswrk;
+                $this->business_unit->EditValue = $arwrk;
+            }
+            $this->business_unit->PlaceHolder = RemoveHtml($this->business_unit->caption());
+
+            // group_name
+            $this->group_name->setupEditAttributes();
+            $this->group_name->EditCustomAttributes = "";
+            if (!$this->group_name->Raw) {
+                $this->group_name->AdvancedSearch->SearchValue = HtmlDecode($this->group_name->AdvancedSearch->SearchValue);
+            }
+            $this->group_name->EditValue = HtmlEncode($this->group_name->AdvancedSearch->SearchValue);
+            $this->group_name->PlaceHolder = RemoveHtml($this->group_name->caption());
+
+            // createddate
+            $this->createddate->setupEditAttributes();
+            $this->createddate->EditCustomAttributes = "";
+            $this->createddate->EditValue = HtmlEncode(FormatDateTime(UnFormatDateTime($this->createddate->AdvancedSearch->SearchValue, $this->createddate->formatPattern()), 8));
+            $this->createddate->PlaceHolder = RemoveHtml($this->createddate->caption());
+
+            // modifieddate
+            $this->modifieddate->setupEditAttributes();
+            $this->modifieddate->EditCustomAttributes = "";
+            $this->modifieddate->EditValue = HtmlEncode(FormatDateTime(UnFormatDateTime($this->modifieddate->AdvancedSearch->SearchValue, $this->modifieddate->formatPattern()), 8));
+            $this->modifieddate->PlaceHolder = RemoveHtml($this->modifieddate->caption());
         }
         if ($this->RowType == ROWTYPE_ADD || $this->RowType == ROWTYPE_EDIT || $this->RowType == ROWTYPE_SEARCH) { // Add/Edit/Search row
             $this->setupFieldTitles();
@@ -2629,6 +2956,26 @@ class MainPaGroupsList extends MainPaGroups
         if ($this->RowType != ROWTYPE_AGGREGATEINIT) {
             $this->rowRendered();
         }
+    }
+
+    // Validate search
+    protected function validateSearch()
+    {
+        // Check if validation required
+        if (!Config("SERVER_VALIDATE")) {
+            return true;
+        }
+
+        // Return validate result
+        $validateSearch = !$this->hasInvalidFields();
+
+        // Call Form_CustomValidate event
+        $formCustomError = "";
+        $validateSearch = $validateSearch && $this->formCustomValidate($formCustomError);
+        if ($formCustomError != "") {
+            $this->setFailureMessage($formCustomError);
+        }
+        return $validateSearch;
     }
 
     // Validate form
@@ -2693,6 +3040,9 @@ class MainPaGroupsList extends MainPaGroups
         if (count($rows) == 0) {
             $this->setFailureMessage($Language->phrase("NoRecord")); // No record found
             return false;
+        }
+        if ($this->AuditTrailOnDelete) {
+            $this->writeAuditTrailDummy($Language->phrase("BatchDeleteBegin")); // Batch delete begin
         }
 
         // Clone old rows
@@ -2910,6 +3260,115 @@ class MainPaGroupsList extends MainPaGroups
         return $addRow;
     }
 
+    // Load advanced search
+    public function loadAdvancedSearch()
+    {
+        $this->id->AdvancedSearch->load();
+        $this->business_unit->AdvancedSearch->load();
+        $this->group_name->AdvancedSearch->load();
+        $this->createdby->AdvancedSearch->load();
+        $this->modifiedby->AdvancedSearch->load();
+        $this->createddate->AdvancedSearch->load();
+        $this->modifieddate->AdvancedSearch->load();
+    }
+
+    // Get export HTML tag
+    protected function getExportTag($type, $custom = false)
+    {
+        global $Language;
+        $pageUrl = $this->pageUrl();
+        $exportUrl = GetUrl($pageUrl . "export=" . $type . ($custom ? "&amp;custom=1" : ""));
+        if (SameText($type, "excel")) {
+            if ($custom) {
+                return "<button type=\"button\" class=\"btn btn-default ew-export-link ew-excel\" title=\"" . HtmlEncode($Language->phrase("ExportToExcelText")) . "\" data-caption=\"" . HtmlEncode($Language->phrase("ExportToExcelText")) . "\" form=\"fmain_pa_groupslist\" data-url=\"$exportUrl\" data-ew-action=\"export\" data-export=\"excel\" data-custom=\"true\" data-export-selected=\"false\">" . $Language->phrase("ExportToExcel") . "</button>";
+            } else {
+                return "<a href=\"$exportUrl\" class=\"btn btn-default ew-export-link ew-excel\" title=\"" . HtmlEncode($Language->phrase("ExportToExcelText")) . "\" data-caption=\"" . HtmlEncode($Language->phrase("ExportToExcelText")) . "\">" . $Language->phrase("ExportToExcel") . "</a>";
+            }
+        } elseif (SameText($type, "word")) {
+            if ($custom) {
+                return "<button type=\"button\" class=\"btn btn-default ew-export-link ew-word\" title=\"" . HtmlEncode($Language->phrase("ExportToWordText")) . "\" data-caption=\"" . HtmlEncode($Language->phrase("ExportToWordText")) . "\" form=\"fmain_pa_groupslist\" data-url=\"$exportUrl\" data-ew-action=\"export\" data-export=\"word\" data-custom=\"true\" data-export-selected=\"false\">" . $Language->phrase("ExportToWord") . "</button>";
+            } else {
+                return "<a href=\"$exportUrl\" class=\"btn btn-default ew-export-link ew-word\" title=\"" . HtmlEncode($Language->phrase("ExportToWordText")) . "\" data-caption=\"" . HtmlEncode($Language->phrase("ExportToWordText")) . "\">" . $Language->phrase("ExportToWord") . "</a>";
+            }
+        } elseif (SameText($type, "pdf")) {
+            if ($custom) {
+                return "<button type=\"button\" class=\"btn btn-default ew-export-link ew-pdf\" title=\"" . HtmlEncode($Language->phrase("ExportToPdfText")) . "\" data-caption=\"" . HtmlEncode($Language->phrase("ExportToPdfText")) . "\" form=\"fmain_pa_groupslist\" data-url=\"$exportUrl\" data-ew-action=\"export\" data-export=\"pdf\" data-custom=\"true\" data-export-selected=\"false\">" . $Language->phrase("ExportToPdf") . "</button>";
+            } else {
+                return "<a href=\"$exportUrl\" class=\"btn btn-default ew-export-link ew-pdf\" title=\"" . HtmlEncode($Language->phrase("ExportToPdfText")) . "\" data-caption=\"" . HtmlEncode($Language->phrase("ExportToPdfText")) . "\">" . $Language->phrase("ExportToPdf") . "</a>";
+            }
+        } elseif (SameText($type, "html")) {
+            return "<a href=\"$exportUrl\" class=\"btn btn-default ew-export-link ew-html\" title=\"" . HtmlEncode($Language->phrase("ExportToHtmlText")) . "\" data-caption=\"" . HtmlEncode($Language->phrase("ExportToHtmlText")) . "\">" . $Language->phrase("ExportToHtml") . "</a>";
+        } elseif (SameText($type, "xml")) {
+            return "<a href=\"$exportUrl\" class=\"btn btn-default ew-export-link ew-xml\" title=\"" . HtmlEncode($Language->phrase("ExportToXmlText")) . "\" data-caption=\"" . HtmlEncode($Language->phrase("ExportToXmlText")) . "\">" . $Language->phrase("ExportToXml") . "</a>";
+        } elseif (SameText($type, "csv")) {
+            return "<a href=\"$exportUrl\" class=\"btn btn-default ew-export-link ew-csv\" title=\"" . HtmlEncode($Language->phrase("ExportToCsvText")) . "\" data-caption=\"" . HtmlEncode($Language->phrase("ExportToCsvText")) . "\">" . $Language->phrase("ExportToCsv") . "</a>";
+        } elseif (SameText($type, "email")) {
+            $url = $custom ? ' data-url="' . $exportUrl . '"' : '';
+            return '<button type="button" class="btn btn-default ew-export-link ew-email" title="' . $Language->phrase("ExportToEmailText") . '" data-caption="' . $Language->phrase("ExportToEmailText") . '" form="fmain_pa_groupslist" data-ew-action="email" data-hdr="' . $Language->phrase("ExportToEmailText") . '" data-sel="false"' . $url . '>' . $Language->phrase("ExportToEmail") . '</button>';
+        } elseif (SameText($type, "print")) {
+            return "<a href=\"$exportUrl\" class=\"btn btn-default ew-export-link ew-print\" title=\"" . HtmlEncode($Language->phrase("ExportToPrintText")) . "\" data-caption=\"" . HtmlEncode($Language->phrase("ExportToPrintText")) . "\">" . $Language->phrase("PrinterFriendly") . "</a>";
+        }
+    }
+
+    // Set up export options
+    protected function setupExportOptions()
+    {
+        global $Language;
+
+        // Printer friendly
+        $item = &$this->ExportOptions->add("print");
+        $item->Body = $this->getExportTag("print");
+        $item->Visible = false;
+
+        // Export to Excel
+        $item = &$this->ExportOptions->add("excel");
+        $item->Body = $this->getExportTag("excel");
+        $item->Visible = true;
+
+        // Export to Word
+        $item = &$this->ExportOptions->add("word");
+        $item->Body = $this->getExportTag("word");
+        $item->Visible = false;
+
+        // Export to HTML
+        $item = &$this->ExportOptions->add("html");
+        $item->Body = $this->getExportTag("html");
+        $item->Visible = false;
+
+        // Export to XML
+        $item = &$this->ExportOptions->add("xml");
+        $item->Body = $this->getExportTag("xml");
+        $item->Visible = false;
+
+        // Export to CSV
+        $item = &$this->ExportOptions->add("csv");
+        $item->Body = $this->getExportTag("csv");
+        $item->Visible = true;
+
+        // Export to PDF
+        $item = &$this->ExportOptions->add("pdf");
+        $item->Body = $this->getExportTag("pdf");
+        $item->Visible = false;
+
+        // Export to Email
+        $item = &$this->ExportOptions->add("email");
+        $item->Body = $this->getExportTag("email");
+        $item->Visible = false;
+
+        // Drop down button for export
+        $this->ExportOptions->UseButtonGroup = true;
+        $this->ExportOptions->UseDropDownButton = false;
+        if ($this->ExportOptions->UseButtonGroup && IsMobile()) {
+            $this->ExportOptions->UseDropDownButton = true;
+        }
+        $this->ExportOptions->DropDownButtonPhrase = $Language->phrase("ButtonExport");
+
+        // Add group option item
+        $item = &$this->ExportOptions->addGroupOption();
+        $item->Body = "";
+        $item->Visible = false;
+    }
+
     // Set up search options
     protected function setupSearchOptions()
     {
@@ -2959,6 +3418,102 @@ class MainPaGroupsList extends MainPaGroups
     {
         if (!$this->hasSearchFields() && $this->SearchOptions["searchtoggle"]) {
             $this->SearchOptions["searchtoggle"]->Visible = false;
+        }
+    }
+
+    /**
+    * Export data in HTML/CSV/Word/Excel/XML/Email/PDF format
+    *
+    * @param bool $return Return the data rather than output it
+    * @return mixed
+    */
+    public function exportData($return = false)
+    {
+        global $Language;
+        $utf8 = SameText(Config("PROJECT_CHARSET"), "utf-8");
+
+        // Load recordset
+        $this->TotalRecords = $this->listRecordCount();
+        $this->StartRecord = 1;
+
+        // Export all
+        if ($this->ExportAll) {
+            if (Config("EXPORT_ALL_TIME_LIMIT") >= 0) {
+                @set_time_limit(Config("EXPORT_ALL_TIME_LIMIT"));
+            }
+            $this->DisplayRecords = $this->TotalRecords;
+            $this->StopRecord = $this->TotalRecords;
+        } else { // Export one page only
+            $this->setupStartRecord(); // Set up start record position
+            // Set the last record to display
+            if ($this->DisplayRecords <= 0) {
+                $this->StopRecord = $this->TotalRecords;
+            } else {
+                $this->StopRecord = $this->StartRecord + $this->DisplayRecords - 1;
+            }
+        }
+        $rs = $this->loadRecordset($this->StartRecord - 1, $this->DisplayRecords <= 0 ? $this->TotalRecords : $this->DisplayRecords);
+        $this->ExportDoc = GetExportDocument($this, "h");
+        $doc = &$this->ExportDoc;
+        if (!$doc) {
+            $this->setFailureMessage($Language->phrase("ExportClassNotFound")); // Export class not found
+        }
+        if (!$rs || !$doc) {
+            RemoveHeader("Content-Type"); // Remove header
+            RemoveHeader("Content-Disposition");
+            $this->showMessage();
+            return;
+        }
+        $this->StartRecord = 1;
+        $this->StopRecord = $this->DisplayRecords <= 0 ? $this->TotalRecords : $this->DisplayRecords;
+
+        // Call Page Exporting server event
+        $this->ExportDoc->ExportCustom = !$this->pageExporting();
+        $header = $this->PageHeader;
+        $this->pageDataRendering($header);
+        $doc->Text .= $header;
+        $this->exportDocument($doc, $rs, $this->StartRecord, $this->StopRecord, "");
+        $footer = $this->PageFooter;
+        $this->pageDataRendered($footer);
+        $doc->Text .= $footer;
+
+        // Close recordset
+        $rs->close();
+
+        // Call Page Exported server event
+        $this->pageExported();
+
+        // Export header and footer
+        $doc->exportHeaderAndFooter();
+
+        // Clean output buffer (without destroying output buffer)
+        $buffer = ob_get_contents(); // Save the output buffer
+        if (!Config("DEBUG") && $buffer) {
+            ob_clean();
+        }
+
+        // Write debug message if enabled
+        if (Config("DEBUG") && !$this->isExport("pdf")) {
+            echo GetDebugMessage();
+        }
+
+        // Output data
+        if ($this->isExport("email")) {
+            // Export-to-email disabled
+        } else {
+            $doc->export();
+            if ($return) {
+                RemoveHeader("Content-Type"); // Remove header
+                RemoveHeader("Content-Disposition");
+                $content = ob_get_contents();
+                if ($content) {
+                    ob_clean();
+                }
+                if ($buffer) {
+                    echo $buffer; // Resume the output buffer
+                }
+                return $content;
+            }
         }
     }
 
